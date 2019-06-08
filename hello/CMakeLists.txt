@@ -1,1 +1,1 @@
-add_executable(hello hello.cpp hello.hpp)
+add_executable(hello hello.cpp hello.hpp demo.cpp demo.hpp)

@@ -26,7 +26,7 @@ add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
 add_executable(test main.cpp
         ../hello/hello.hpp
         ../hello/hello.cpp
-        ../hello/hello_test.cpp)
+        ../hello/hello_test.cpp ../hello/demo_test.cpp)
 
 target_link_libraries(test gtest_main gmock_main)
 add_test(NAME test_main COMMAND test)
