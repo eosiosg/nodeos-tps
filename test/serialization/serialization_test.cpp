@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <string>
+#include <cstring>
 #include <chrono>
 #include "serialization.hpp"
 #include "other_fc.hpp"
@@ -51,10 +52,10 @@ TEST(SerializationTest, PackUnpackTest) {
 TEST(SerializationTest, sha256Test) {
     REGISTER_CALLABLE_CLASS(sha256, sha256::serialize, sha256::deserialize);
     sha256 x("aca376f206b8fc25a6ed44dbdc66547c36c6c33e3a119ffbeaef943642f0e906");
-    EXPECT_EQ(x.hash[0], 2737265013511594924ul);
-    EXPECT_EQ(x.hash[1], 8958898657504325030ul);
-    EXPECT_EQ(x.hash[2], 18131229566675699254ul);
-    EXPECT_EQ(x.hash[3], 498193400975388650ul);
+    EXPECT_EQ(x._hash[0], 2737265013511594924ul);
+    EXPECT_EQ(x._hash[1], 8958898657504325030ul);
+    EXPECT_EQ(x._hash[2], 18131229566675699254ul);
+    EXPECT_EQ(x._hash[3], 498193400975388650ul);
 
     enum VType{XX, YY};
 
@@ -86,10 +87,10 @@ TEST(SerializationTest, sha256Test) {
     EXPECT_EQ(rt2.first, true);
     EXPECT_EQ(rt2.second, 33);
     EXPECT_EQ(b, YY);
-    EXPECT_EQ(y.hash[0], 2737265013511594924ul);
-    EXPECT_EQ(y.hash[1], 8958898657504325030ul);
-    EXPECT_EQ(y.hash[2], 18131229566675699254ul);
-    EXPECT_EQ(y.hash[3], 498193400975388650ul);
+    EXPECT_EQ(y._hash[0], 2737265013511594924ul);
+    EXPECT_EQ(y._hash[1], 8958898657504325030ul);
+    EXPECT_EQ(y._hash[2], 18131229566675699254ul);
+    EXPECT_EQ(y._hash[3], 498193400975388650ul);
 }
 
 TEST(SerializationTest, PublicKeyTest) {
@@ -270,4 +271,95 @@ TEST(SerializationTest, HandshakeMessageWithoutSigTest) {
     EXPECT_EQ(h.os, hm.os);
     EXPECT_EQ(h.agent, hm.agent);
     EXPECT_EQ(h.generation, hm.generation);
+}
+
+TEST(SerializationTest, Sha256HashTest) {
+    auto t = 1560146511226881910ul;
+    auto p = sha256::hash(t);
+    EXPECT_EQ(p._hash[0], 7260823253831483665ul);
+    EXPECT_EQ(p._hash[1], 16463669465626225180ul);
+    EXPECT_EQ(p._hash[2], 15035203016742455105ul);
+    EXPECT_EQ(p._hash[3], 1338358450504193530ul);
+}
+
+TEST(SerializationTest, PrivateKeyTest) {
+    REGISTER_CALLABLE_CLASS(signature, signature::serialize, signature::deserialize);
+
+    auto data = 1560168306641895115l;
+    auto dataSha256 = sha256::hash(data);
+    auto privateKey = private_key("5KS6WskGdWAwFeVeSXSPiZpjMaHovWN8x34qiWk4fXtXawy881d");
+    auto publicKey = public_key("EOS4zozTfLinWDEo9z4YoU35DykbtAmDhxmib6q756D8gh767zQT4");
+    auto sig = privateKey.sign(dataSha256);
+
+    enum VType {XXX, YYY, ZZZ};
+
+    uint8_t buffer[200];
+    memset(buffer, 0xff, 200);
+    sz::Serialization<signature, VType> serialization;
+    serialization.setBuffer(buffer, 200);
+    auto rt = serialization.pack(sig, YYY);
+    EXPECT_EQ(rt.first, true);
+    EXPECT_EQ(rt.second, 67);
+
+    uint8_t expect_buffer[200] = {
+        0x1,0x0,0x1f,0x6b,0x33,0x1e,0x27,0x42,0x68,0xbd,0x96,0x43,0x12,0x53,0xb0,0x4d,
+        0xfd,0xd9,0xf1,0x3f,0x54,0xf1,0x85,0x2,0x2e,0x21,0x99,0x82,0x28,0x3c,0xd9,0x2e,
+        0x6,0xb4,0x19,0x78,0x8f,0x5b,0xf9,0xb6,0x14,0xb8,0xf8,0x38,0xd4,0x46,0x63,0x6e,
+        0x83,0x20,0x1d,0x82,0x5e,0xe7,0x48,0x9b,0x30,0xa8,0x3e,0xad,0xe3,0x12,0x81,0x5a,
+        0x9b,0x3c,0xfd,
+        0xff, 0xff, 0xff
+    };
+    for(auto i=0; i < 70; i++)
+        EXPECT_EQ(expect_buffer[i], buffer[i]);
+
+    sz::Deserialization<signature, VType> deserialization;
+    deserialization.setBuffer(buffer, 200);
+    signature sigm;
+    VType vType;
+    auto rt2 = deserialization.unpack(sigm, vType);
+    EXPECT_EQ(rt2.first, true);
+    EXPECT_EQ(rt2.second, 67);
+    EXPECT_EQ(memcmp(sig.data(), sigm.data(), 65), 0);
+}
+
+TEST(SerializationTest, HandshakeMessageTest) {
+    REGISTER_CALLABLE_CLASS(sha256, sha256::serialize, sha256::deserialize);
+    REGISTER_CALLABLE_CLASS(public_key, public_key::serialize, public_key::deserialize);
+    typedef chrono::system_clock::duration::rep tstamp;
+    struct handshake_message {
+        uint16_t network_version = 0;
+        sha256 chain_id;
+        sha256 node_id;
+        public_key key;
+        tstamp time;
+        sha256 token;
+        signature sig;
+        string p2p_address;
+        uint32_t last_irreversible_block_num = 0;
+        sha256 last_irreversible_block_id;
+        uint32_t head_num = 0;
+        sha256 head_id;
+        string os;
+        string agent;
+        int16_t generation;
+    };
+    REGISTER_NO_CALLABLE_CLASS_15(handshake_message, network_version, chain_id, node_id, key, time, token,
+                                  sig, p2p_address, last_irreversible_block_num, last_irreversible_block_id,
+                                  head_num, head_id, os, agent, generation);
+
+    auto t = std::chrono::system_clock::now().time_since_epoch().count();
+    auto h = handshake_message{
+            .network_version=0x04b6,
+            .chain_id=sha256("aca376f206b8fc25a6ed48736c66547c36c6c33e3a119ffbeaef943642f0e906"),
+            .node_id=sha256("aca376f206b8fc25a6ed44cccc66547c36c6c33e3a119ffbeaef943642f0e906"),
+            .key=public_key("EOS5vZYfat26kNXMbhvy2WX3Sy1zA3rxi79Ludpnrh4PPUBdJMTBB"),
+            .time=t,
+            .token=sha256::hash(t),
+            .p2p_address="Localhost 1927 9876",
+            .last_irreversible_block_num=20,
+            .last_irreversible_block_id=sha256("aca376f206b8fc25a6ed44dbdc66547c36c6c33e3a119ffbeaef943642f01234"),
+            .head_id=sha256("aca3737206b8fc25a6ed44dbdc66547c36c6c33e3a119ffbeaef943642f01234"),
+            .os="linux ubuntu",
+            .agent="Super Gang",
+            .generation=20};
 }

@@ -33,33 +33,25 @@ size_t from_hex( const string& hex_str, char* out_data, size_t out_data_len ) {
 
 string public_key::public_key_legacy_prefix = "EOS";
 
-constexpr size_t const_strlen(const char* str) {
-    int i = 0;
-    while(*(str+i) != '\0')
-        i++;
-    return i;
-}
-
-
 sha256::sha256(const string& hexString) {
-    from_hex(hexString, (char*)&hash, sizeof(hash));
+    from_hex(hexString, (char*)&_hash, sizeof(_hash));
 }
 
 pair<bool, size_t> sha256::serialize(void* pDstBuffer, const void* pData, size_t bufferSize) {
     if(bufferSize < sizeof(HashType)) return make_pair(false, 0);
-    memcpy(pDstBuffer, ((sha256*)pData)->hash, sizeof(HashType));
+    memcpy(pDstBuffer, ((sha256*)pData)->_hash, sizeof(HashType));
     return make_pair(true, sizeof(HashType));
 }
 
 pair<bool, size_t> sha256::deserialize(void* pDstData, const void* pBuffer, size_t bufferLength) {
     if(sizeof(HashType) > bufferLength) return make_pair(false, 0);
-    memcpy(((sha256*)pDstData)->hash, pBuffer, sizeof(HashType));
+    memcpy(((sha256*)pDstData)->_hash, pBuffer, sizeof(HashType));
     return make_pair(true, sizeof(HashType));
 }
 
 bool sha256::operator==(const sha256& a1) {
     for(auto i = 0; i < 4; i++) {
-        if(a1.hash[i] != hash[i])
+        if(a1._hash[i] != _hash[i])
             return false;
     }
     return true;
@@ -103,4 +95,29 @@ bool public_key::operator==(const public_key& k) {
         if(storage[i] != k.storage[i]) return false;
     }
     return true;
+}
+
+int extended_nonce_function( unsigned char *nonce32, const unsigned char *msg32,
+                                    const unsigned char *key32, unsigned int attempt,
+                                    const void *data ) {
+    unsigned int* extra = (unsigned int*) data;
+    (*extra)++;
+    return secp256k1_nonce_function_default( nonce32, msg32, key32, *extra, nullptr );
+}
+
+pair<bool, sha256> from_wif( const string& wif_key ) {
+    auto rt = from_base58(wif_key);
+    sha256 retData;
+    if(!rt.first) return make_pair(false, retData);
+    auto wif_bytes = rt.second;
+    if(wif_bytes.size() < 5) return make_pair(false, retData);
+    auto key_bytes = vector<char>(wif_bytes.begin() + 1, wif_bytes.end() - 4);
+    sha256 check = sha256::hash(wif_bytes.data(), wif_bytes.size() - 4);
+    sha256 check2 = sha256::hash(check);
+
+    if(memcmp( (char*)&check, wif_bytes.data() + wif_bytes.size() - 4, 4 ) != 0 &&
+       memcmp( (char*)&check2, wif_bytes.data() + wif_bytes.size() - 4, 4 ) != 0 )
+        return make_pair(false, retData);
+    memcpy(retData.data(), wif_bytes.data() + 1, wif_bytes.size() - 5);
+    return make_pair(true, retData);
 }

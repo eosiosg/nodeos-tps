@@ -20,6 +20,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 # the gtest and gtest_main targets.
 add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
         ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
+
         EXCLUDE_FROM_ALL)
 
 include_directories(../serialization)
@@ -36,7 +37,7 @@ add_executable(test main.cpp
         ../serialization/base58.cpp
         serialization/serialization_test.cpp)
 
-target_link_libraries(test gmp pthread ssl crypto gtest_main gmock_main)
+target_link_libraries(test gmp pthread ssl crypto gtest_main gmock_main secp256k1)
 add_test(NAME test_main COMMAND test)
 
 #find_package(Boost 1.6.9 REQUIRED system)

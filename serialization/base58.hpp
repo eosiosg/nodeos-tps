@@ -27,6 +27,15 @@
 #include <openssl/bn.h>
 #include <openssl/ripemd.h>
 
+uint32_t calculate_checksum(const void* pData, size_t size);
+
+constexpr size_t const_strlen(const char* str) {
+    int i = 0;
+    while(*(str+i) != '\0')
+        i++;
+    return i;
+}
+
 /** Errors thrown by the bignum class */
 class bignum_error : public std::runtime_error
 {
