@@ -22,13 +22,21 @@ add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
         ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
         EXCLUDE_FROM_ALL)
 
+include_directories(../serialization)
 # Now simply link against gtest or gtest_main as needed. Eg
 add_executable(test main.cpp
         ../hello/hello.hpp
         ../hello/hello.cpp
-        ../hello/hello_test.cpp)
+        ../hello/hello_test.cpp
+        ../serialization/serialization.cpp
+        ../serialization/serialization.hpp
+        ../serialization/other_fc.hpp
+        ../serialization/other_fc.cpp
+        ../serialization/base58.hpp
+        ../serialization/base58.cpp
+        serialization/serialization_test.cpp)
 
-target_link_libraries(test gtest_main gmock_main)
+target_link_libraries(test gmp pthread ssl crypto gtest_main gmock_main)
 add_test(NAME test_main COMMAND test)
 
 #find_package(Boost 1.6.9 REQUIRED system)
