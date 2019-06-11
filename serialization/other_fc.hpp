@@ -97,6 +97,10 @@ public:
         memcpy(((signature*)pDstData)[0]._data.data(), (const char*)pBuffer + 1, 65);
         return make_pair(true, 66);
     }
+
+    bool operator==(const signature& sig) {
+        return sig._data == sig._data;
+    }
 };
 
 class private_key {
