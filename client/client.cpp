@@ -97,6 +97,10 @@ _socket(ioc), _resolver(ioc), _timer(ioc){
     buffer = new u_char[1024*1024*16];
 }
 
+Client::~Client(void) {
+    delete [] buffer;
+}
+
 void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
     if (ec) {
         std::cout << "Connect failed: " << ec.message() << std::endl;
@@ -109,29 +113,16 @@ void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
 }
 
 void Client::sendHandshakeMessage(handshake_message && msg) {
-    auto n = net_message(msg);
+   sendMessage(msg);
+}
 
-    uint32_t payload_size = fc::raw::pack_size(n);
-    char *header = reinterpret_cast<char *>(&payload_size);
-    size_t header_size = sizeof(payload_size);
-    size_t buffer_size = header_size + payload_size;
+void Client::sendSyncRequestMessage(sync_request_message&& msg) {
+    sendMessage(msg);
+}
+
+void Client::timeAsyncExec(uint64_t seconds, std::function<void(void)> f) {
 
 
-    fc::datastream<u_char *> ds(buffer, buffer_size);
-    ds.write(header, header_size);
-    fc::raw::pack(ds, n);
-
-    _socket.async_write_some(
-            boost::asio::buffer(buffer, buffer_size),
-            [this](boost::system::error_code ec, std::size_t w){
-                if(ec) {
-                    cerr << "Error when asyn_write_some handshake_message." << endl;
-                    cerr << ec.message() << endl;
-                    _socket.close();
-                    return;
-                }
-                cout << "async write handshake_message successfully." << endl;
-            });
 }
 
 void Client::StartHandshakeMessage(void) {
@@ -162,7 +153,16 @@ bool Client::processNextMessage(uint32_t messageLen) {
 }
 
 void Client::handleMessage(const handshake_message& msg) {
+    auto retMsg = FakeData::fakeHandShakeMessage();
+    retMsg.last_irreversible_block_id = msg.last_irreversible_block_id;
+    retMsg.last_irreversible_block_num = msg.last_irreversible_block_num;
+    retMsg.head_id = msg.head_id;
+    retMsg.head_num = msg.head_num;
+    retMsg.generation = msg.generation;
+
+    sendMessage(std::move(retMsg));
     cout << "Client::handleMessage(const handshake_message& msg)" << endl;
+
 }
 
 void Client::handleMessage(const chain_size_message& msg) {
@@ -175,10 +175,30 @@ void Client::handleMessage(const go_away_message& msg) {
 
 void Client::handleMessage(const time_message& msg) {
     cout << "Client::handleMessage(const time_message& msg)" << endl;
+
+}
+
+void _p(Client* c) {
+    request_message rm;
+    rm.req_blocks.mode = none;
+    rm.req_blocks.pending = 0;
+    rm.req_trx.mode = none;
+    rm.req_trx.pending = 0;
+    c->sendMessage(std::move(rm));
+    cout << "send request message successfully." << endl;
 }
 
 void Client::handleMessage(const notice_message& msg) {
+
+    // sync_request_message请求
+    if(msg.known_blocks.mode == last_irr_catch_up && msg.known_trx.mode == last_irr_catch_up) {
+        sync_request_message srm{1, 100};
+        sendSyncRequestMessage(std::move(srm));
+    }
     cout << "Client::handleMessage(const notice_message& msg)" << endl;
+
+    _timer.expires_after(std::chrono::seconds(10));
+    _timer.async_wait(std::bind(_p, this));
 }
 
 void Client::handleMessage(const request_message& msg) {

@@ -65,6 +65,7 @@ class Client {
 
 public:
     Client(boost::asio::io_context& ioc, const char* host, const char* port);
+    virtual ~Client(void);
     void OnConnect(boost::system::error_code ec, tcp::endpoint endpoint);
     bool processNextMessage(uint32_t messageLen);
     void handleMessage(const handshake_message& msg);
@@ -82,7 +83,31 @@ public:
     void StartSendTimeMessage();
     void StartHandshakeMessage();
     void DoSendTimeMessage();
+    void timeAsyncExec(uint64_t seconds, std::function<void(void)> f);
     void sendHandshakeMessage(handshake_message && msg);
+    void sendSyncRequestMessage(sync_request_message&& msg);
+    template <typename T>
+    void sendMessage(T && msg) {
+        auto n = net_message(msg);
+        uint32_t payload_size = fc::raw::pack_size(n);
+        char *header = reinterpret_cast<char *>(&payload_size);
+        size_t header_size = sizeof(payload_size);
+        size_t buffer_size = header_size + payload_size;
+        fc::datastream<u_char *> ds(buffer, buffer_size);
+        ds.write(header, header_size);
+        fc::raw::pack(ds, n);
+        _socket.async_write_some(
+                boost::asio::buffer(buffer, buffer_size),
+                [this](boost::system::error_code ec, std::size_t w){
+                    if(ec) {
+                        cerr << "Error when asyn_write_some handshake_message." << endl;
+                        cerr << ec.message() << endl;
+                        _socket.close();
+                        return;
+                    }
+                    cout << "async write handshake_message successfully." << endl;
+                });
+    }
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
 };
 
