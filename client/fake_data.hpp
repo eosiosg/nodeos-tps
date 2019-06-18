@@ -15,13 +15,17 @@ public:
         eosio::handshake_message h;
         h.network_version = 1206;
 
-        uint64_t chain_id[4] = {
-                5134146145835746767ul,
+        /*uint64_t chain_id[4] = {
+                *//*5134146145835746767ul,
                 13995347844241873183ul,
                 15955289689732806957ul,
-                5754729454247128513ul
+                5754729454247128513ul*//*
+                0,0,0,0
         };
         memcpy(h.chain_id._hash, chain_id, sizeof(chain_id));
+        */
+        eosio::chain_id_type chain_id("02ce5aa2a05e594cc3c041fc8989cf8ff4fd6efe828a23d7b3825d51b70fa2ed");
+        h.chain_id = chain_id;
 
         uint64_t node_id[4] = {
                 16341233654929650305ul,
@@ -29,7 +33,7 @@ public:
                 6345568250656053691ul,
                 12222374913718194331ul
         };
-        memcpy(h.node_id._hash, chain_id, sizeof(node_id));
+        memcpy(h.node_id._hash, node_id, sizeof(node_id));
 
         h.key = eosio::public_key_type();
         h.time = std::chrono::system_clock::now().time_since_epoch().count();

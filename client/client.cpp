@@ -372,7 +372,7 @@ void Client::OnResolve(boost::system::error_code ec, tcp::resolver::results_type
 
 int main(void) {
     const char* host = "127.0.0.1";
-    const char* port = "9877";
+    const char* port = "9876";
 
     boost::asio::io_service ioc;
     Client client(ioc, host, port);
