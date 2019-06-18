@@ -225,6 +225,39 @@ void Client::handleMessage(const request_p2p_message& msg) {
     cout << "Client::handleMessage(const request_p2p_message& msg)" << endl;
 }
 
+void Client::handleMessage(const pbft_prepare &msg) {
+    cout << "Client::handleMessage(const pbft_prepare& msg)" << endl;
+}
+
+void Client::handleMessage(const pbft_commit &msg) {
+    cout << "Client::handleMessage(const pbft_commit& msg)" << endl;
+}
+
+void Client::handleMessage(const pbft_view_change &msg) {
+    cout << "Client::handleMessage(const pbft_view_change& msg)" << endl;
+}
+
+void Client::handleMessage(const pbft_new_view &msg) {
+    cout << "Client::handleMessage(const pbft_new_view& msg)" << endl;
+}
+
+void Client::handleMessage(const pbft_checkpoint &msg) {
+    cout << "Client::handleMessage(const pbft_checkpoint& msg)" << endl;
+}
+
+void Client::handleMessage(const pbft_stable_checkpoint &msg) {
+    cout << "Client::handleMessage(const pbft_stable_checkpoint& msg)" << endl;
+}
+
+void Client::handleMessage(const checkpoint_request_message &msg) {
+    cout << "Client::handleMessage(const checkpoint_request_message& msg)" << endl;
+}
+
+void Client::handleMessage(const compressed_pbft_message &msg) {
+    cout << "Client::handleMessage(const compressed_pbft_message& msg)" << endl;
+}
+
+
 void Client::StartReadMessage() {
     if(!_socket.is_open()) return;
     std::size_t minimum_read = _outStandingReadBytes ? *_outStandingReadBytes:message_header_size;

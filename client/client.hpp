@@ -79,6 +79,16 @@ public:
     void handleMessage(const packed_transaction_ptr& msg);
     void handleMessage(const response_p2p_message& msg);
     void handleMessage(const request_p2p_message& msg);
+
+    void handleMessage(const pbft_prepare &msg);
+    void handleMessage(const pbft_commit &msg);
+    void handleMessage(const pbft_view_change &msg);
+    void handleMessage(const pbft_new_view &msg);
+    void handleMessage(const pbft_checkpoint &msg);
+    void handleMessage(const pbft_stable_checkpoint &msg);
+    void handleMessage(const checkpoint_request_message &msg);
+    void handleMessage(const compressed_pbft_message &msg);
+
     void StartReadMessage();
     void StartSendTimeMessage();
     void StartHandshakeMessage();
