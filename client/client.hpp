@@ -44,16 +44,6 @@ constexpr auto     def_sync_fetch_span = 100;
 using signed_block_ptr = std::shared_ptr<signed_block>;
 using packed_transaction_ptr = std::shared_ptr<packed_transaction>;
 
-#define EOS_ASSERT( expr, exc_type, FORMAT, ... )                \
-   FC_MULTILINE_MACRO_BEGIN                                           \
-   if( !(expr) )                                                      \
-      FC_THROW_EXCEPTION( exc_type, FORMAT, __VA_ARGS__ );            \
-   FC_MULTILINE_MACRO_END
-
-FC_DECLARE_EXCEPTION( chain_exception, 3000000, "blockchain exception" )
-FC_DECLARE_DERIVED_EXCEPTION( plugin_exception, chain_exception, 3110000, "Plugin exception" )
-FC_DECLARE_DERIVED_EXCEPTION( plugin_config_exception, plugin_exception, 3110006, "Incorrect plugin configuration" )
-
 
 class Client {
     tcp::socket _socket;

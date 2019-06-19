@@ -153,29 +153,23 @@ bool Client::processNextMessage(uint32_t messageLen) {
 }
 
 void Client::handleMessage(const handshake_message& msg) {
-    auto retMsg = FakeData::fakeHandShakeMessage();
-    retMsg.last_irreversible_block_id = msg.last_irreversible_block_id;
-    retMsg.last_irreversible_block_num = msg.last_irreversible_block_num;
-    retMsg.head_id = msg.head_id;
-    retMsg.head_num = msg.head_num;
-    retMsg.generation = msg.generation;
-
-    sendMessage(std::move(retMsg));
-    cout << "Client::handleMessage(const handshake_message& msg)" << endl;
-
+    cout << "handshake_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const chain_size_message& msg) {
-    cout << "Client::handleMessage(const chain_size_message& msg)" << endl;
+    cout << "chain_size_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const go_away_message& msg) {
-    cout << "Client::handleMessage(const go_away_message& msg)" << endl;
+    cout << "go_away_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const time_message& msg) {
-    cout << "Client::handleMessage(const time_message& msg)" << endl;
-
+    cout << "time_message ----------";
+    cout << msg << endl;
 }
 
 void _p(Client* c) {
@@ -190,71 +184,83 @@ void _p(Client* c) {
 
 void Client::handleMessage(const notice_message& msg) {
 
-    // sync_request_message请求
-    if(msg.known_blocks.mode == last_irr_catch_up && msg.known_trx.mode == last_irr_catch_up) {
-        sync_request_message srm{1, 100};
-        sendSyncRequestMessage(std::move(srm));
-    }
-    cout << "Client::handleMessage(const notice_message& msg)" << endl;
+//    sync_request_message请求
+//    if(msg.known_blocks.mode == last_irr_catch_up && msg.known_trx.mode == last_irr_catch_up) {
+//        sync_request_message srm{1, 100};
+//        sendSyncRequestMessage(std::move(srm));
+//    }
+    cout << "notice_message ----------";
+    cout << msg << endl;
 
     _timer.expires_after(std::chrono::seconds(10));
     _timer.async_wait(std::bind(_p, this));
 }
 
 void Client::handleMessage(const request_message& msg) {
-    cout << "Client::handleMessage(const request_message& msg)" << endl;
+    cout << "request_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const sync_request_message& msg) {
-    cout << "Client::handleMessage(const sync_request_message& msg)" << endl;
+    cout << "sync_request_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const signed_block_ptr& msg) {
-    cout << "Client::handleMessage(const signed_block_ptr& msg)" << endl;
+    cout << "signed_block_message ----------";
+    cout << *msg << endl;
 }
 
 void Client::handleMessage(const packed_transaction_ptr& msg) {
-    cout << "Client::handleMessage(const packed_transaction_ptr& msg)" << endl;
+    cout << "packed_transaction_ptr ----------";
+    cout << *msg << endl;
 }
 
 void Client::handleMessage(const response_p2p_message& msg) {
-    cout << "Client::handleMessage(const response_p2p_message& msg)" << endl;
+    cout << "response_p2p_message ----------" << endl;
 }
 
 void Client::handleMessage(const request_p2p_message& msg) {
-    cout << "Client::handleMessage(const request_p2p_message& msg)" << endl;
+    cout << "request_p2p_message ----------" << endl;
 }
 
 void Client::handleMessage(const pbft_prepare &msg) {
-    cout << "Client::handleMessage(const pbft_prepare& msg)" << endl;
+    cout << "pbft_prepare ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const pbft_commit &msg) {
-    cout << "Client::handleMessage(const pbft_commit& msg)" << endl;
+    cout << "pbft_commit ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const pbft_view_change &msg) {
-    cout << "Client::handleMessage(const pbft_view_change& msg)" << endl;
+    cout << "pbft_view_change ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const pbft_new_view &msg) {
-    cout << "Client::handleMessage(const pbft_new_view& msg)" << endl;
+    cout << "pbft_new_view ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const pbft_checkpoint &msg) {
-    cout << "Client::handleMessage(const pbft_checkpoint& msg)" << endl;
+    cout << "pbft_checkpoint ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const pbft_stable_checkpoint &msg) {
-    cout << "Client::handleMessage(const pbft_stable_checkpoint& msg)" << endl;
+    cout << "pbft_stable_checkpoint ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const checkpoint_request_message &msg) {
-    cout << "Client::handleMessage(const checkpoint_request_message& msg)" << endl;
+    cout << "checkpoint_request_message ----------";
+    cout << msg << endl;
 }
 
 void Client::handleMessage(const compressed_pbft_message &msg) {
-    cout << "Client::handleMessage(const compressed_pbft_message& msg)" << endl;
+    cout << "compressed_pbft_message ----------" << endl;
 }
 
 
@@ -370,9 +376,18 @@ void Client::OnResolve(boost::system::error_code ec, tcp::resolver::results_type
 }
 
 
-int main(void) {
-    const char* host = "127.0.0.1";
-    const char* port = "9876";
+int main(int argc, char* argv[]) {
+    cout << argc << endl;
+    for(auto i = 1; i < argc; i++) {
+        cout << argv[i] << endl;
+    }
+    if(argc != 3) {
+        cerr << "Invalid parameter." << endl;
+        cerr << "Usage: ./client ip port" << endl;
+        exit(1);
+    }
+    const char* host = argv[1];
+    const char* port = argv[2];
 
     boost::asio::io_service ioc;
     Client client(ioc, host, port);

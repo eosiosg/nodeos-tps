@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <ostream>
 #include "types.hpp"
 
 namespace eosio {
@@ -20,6 +21,14 @@ namespace eosio {
         block_id_type              last_irreversible_block_id;
         uint32_t                   head_num = 0;
         block_id_type              head_id;
+
+        friend std::ostream &operator<<(std::ostream& output, const chain_size_message& msg) {
+            output << ", last_irreversible_block_num:" << msg.last_irreversible_block_num
+                   << ", last_irreversible_block_id:" << msg.last_irreversible_block_id.str()
+                   << ", head_num:" << msg.head_num
+                   << ", head_id:" << msg.head_id.str();
+            return output;
+        }
     };
 
     struct handshake_message {
@@ -38,6 +47,27 @@ namespace eosio {
         std::string                     os;
         std::string                     agent;
         int16_t                    generation;
+
+        friend std::ostream &operator<<(std::ostream& output, const handshake_message& msg) {
+            const std::string sig(msg.sig);
+            const std::string key(msg.key);
+            output << "network_version:" << msg.network_version
+                   << ", chain_id:" << msg.chain_id.str()
+                   << ", node_id:" << msg.node_id.str()
+                   << ", key:" << key
+                   << ", time:" << msg.time
+                   << ", token:" << msg.token.str()
+                   << ", sig:" << sig
+                   << ", p2p_address:" << msg.p2p_address
+                   << ", last_irreversible_block_num:" << msg.last_irreversible_block_num
+                   << ", last_irreversible_block_id:" << msg.last_irreversible_block_id.str()
+                   << ", head_num:" << msg.head_num
+                   << ", head_id:" << msg.head_id.str()
+                   << ", os:" << msg.os
+                   << ", agent:" << msg.agent
+                   << ", generation:" << msg.generation;
+            return output;
+        }
     };
 
     enum go_away_reason {
@@ -77,6 +107,13 @@ namespace eosio {
         go_away_message (go_away_reason r = no_reason) : reason(r), node_id() {}
         go_away_reason reason;
         fc::sha256 node_id; ///< for duplicate notification
+
+        friend std::ostream &operator<<(std::ostream& output, const go_away_message& msg) {
+            output << "reason:" << reason_str(msg.reason) << "(" << msg.reason << ")"
+                   << ", node_id:" << msg.node_id.str();
+            return output;
+        }
+
     };
 
     struct time_message {
@@ -84,6 +121,14 @@ namespace eosio {
         tstamp  rec;       //!< receive timestamp
         tstamp  xmt;       //!< transmit timestamp
         mutable tstamp  dst;       //!< destination timestamp
+
+        friend std::ostream &operator<<(std::ostream& output, const time_message& msg) {
+            output << "org:" << msg.org
+                   << ", rec:" << msg.rec
+                   << ", xmt:" << msg.xmt
+                   << ", dst:" << msg.dst;
+            return output;
+        }
     };
 
     enum id_list_modes {
@@ -119,17 +164,45 @@ namespace eosio {
         notice_message () : known_trx(), known_blocks() {}
         ordered_txn_ids known_trx;
         ordered_blk_ids known_blocks;
+
+        friend std::ostream &operator<<(std::ostream& output, const notice_message& msg) {
+            output << "known_trx.mode:" << modes_str(msg.known_trx.mode)
+                   << ", known_trx.pending:" << msg.known_trx.pending
+                   << ", known_trx.ids:";
+            for(auto& x: msg.known_trx.ids) output << x.str() << ", ";
+            output << "known_blocks.mode:" << modes_str(msg.known_blocks.mode)
+                   << ", known_blocks.pending:" << msg.known_blocks.pending
+                   << ", known_blocks.ids:";
+            for(auto& x: msg.known_blocks.ids) output << x.str() << ", ";
+            return output;
+        }
     };
 
     struct request_message {
         request_message () : req_trx(), req_blocks() {}
         ordered_txn_ids req_trx;
         ordered_blk_ids req_blocks;
+        friend std::ostream &operator<<(std::ostream& output, const request_message& msg) {
+            output << "req_trx.mode:" << modes_str(msg.req_trx.mode)
+                   << ", req_trx.pending:" << msg.req_trx.pending
+                   << ", req_trx.ids:";
+            for(auto& x: msg.req_trx.ids) output << x.str() << ", ";
+            output << "req_blocks.mode:" << modes_str(msg.req_blocks.mode)
+                   << ", req_blocks.pending:" << msg.req_blocks.pending
+                   << ", req_blocks.ids:";
+            for(auto& x: msg.req_blocks.ids) output << x.str() << ", ";
+            return output;
+        }
     };
 
     struct sync_request_message {
         uint32_t start_block;
         uint32_t end_block;
+        friend std::ostream &operator<<(std::ostream& output, const sync_request_message& msg) {
+            output << "start_block:" << msg.start_block
+                   << ", end_block:" << msg.end_block;
+            return output;
+        }
     };
 
     struct request_p2p_message{
@@ -300,11 +373,41 @@ namespace eosio {
         uint32_t          block_num() const { return num_from_id(previous) + 1; }
         static uint32_t   num_from_id(const block_id_type& id);
         void              set_block_extensions_mroot(digest_type& mroot);
+
+        friend std::ostream &operator<<(std::ostream& output, const block_header& msg) {
+            output << "timestamp:" << msg.timestamp.slot
+                   << ", producer:" << msg.producer.to_string()
+                   << ", confirmed:" << msg.confirmed
+                   << ", previous:" << msg.previous.str()
+                   << ", transaction_mroot:" << msg.transaction_mroot.str()
+                   << ", action_mroot:" << msg.action_mroot.str()
+                   << ", schedule_version:" << msg.schedule_version;
+            if(msg.new_producers.valid()) {
+
+                output << ", new_producers.version:" << msg.new_producers->version
+                       << ", new_producers.producers:";
+                for(auto const &x: msg.new_producers->producers) {
+                    std::string key(x.block_signing_key);
+                    output << "(block_signing_key="
+                           << key
+                           << ", producer_name="
+                           << x.producer_name.to_string()
+                           << "), ";
+                }
+            }
+            return output;
+        }
     };
 
     struct signed_block_header : public block_header
     {
         signature_type    producer_signature;
+        friend std::ostream &operator<<(std::ostream& output, const signed_block_header& msg) {
+            output << static_cast<const block_header&>(msg);
+            std::string sig(msg.producer_signature);
+            output << ", msg.producer_signature:" << sig;
+            return output;
+        }
     };
 
     struct transaction_receipt_header {
@@ -345,6 +448,16 @@ namespace eosio {
         void set_reference_block( const block_id_type& reference_block );
         bool verify_reference_block( const block_id_type& reference_block )const;
         void validate()const;
+
+        friend std::ostream& operator<<(std::ostream& output, const transaction_header& msg) {
+            output << "expiration:" << msg.expiration.sec_since_epoch()
+                   << ", ref_block_num:" << msg.ref_block_num
+                   << ", ref_block_prefix:" << msg.ref_block_prefix
+                   << ", max_net_usage_words:" << msg.max_net_usage_words
+                   << ", max_cpu_usage_ms:" << uint32_t(msg.max_cpu_usage_ms)
+                   << ", delay_sec:" << msg.delay_sec;
+            return output;
+        }
     };
     using action_name      = name;
     using permission_name  = name;
@@ -387,24 +500,10 @@ namespace eosio {
         std::vector<action>         actions;
         extensions_type        transaction_extensions;
 
-        transaction_id_type        id()const;
-        digest_type                sig_digest( const chain_id_type& chain_id, const std::vector<bytes>& cfd = std::vector<bytes>() )const;
-        fc::microseconds           get_signature_keys( const std::vector<signature_type>& signatures,
-                                                       const chain_id_type& chain_id,
-                                                       fc::time_point deadline,
-                                                       const std::vector<bytes>& cfd,
-                                                       fc::flat_set<public_key_type>& recovered_pub_keys,
-                                                       bool allow_duplicate_keys = false) const;
-
-        uint32_t total_actions()const { return context_free_actions.size() + actions.size(); }
-        account_name first_authorizor()const {
-            for( const auto& a : actions ) {
-                for( const auto& u : a.authorization )
-                    return u.actor;
-            }
-            return account_name();
+        friend std::ostream& operator<<(std::ostream& output, const transaction& msg) {
+            output << static_cast<const transaction_header&>(msg);
+            return output;
         }
-
     };
     using private_key_type = fc::crypto::private_key;
     struct signed_transaction : public transaction
@@ -433,6 +532,12 @@ namespace eosio {
                                                       bool allow_duplicate_keys = false )const;
     };
     struct packed_transaction {
+
+        friend std::ostream& operator<<(std::ostream& output, const packed_transaction& msg) {
+            output << msg.unpacked_trx;
+            return output;
+        }
+
         enum compression_type {
             none = 0,
             zlib = 1,
@@ -468,7 +573,6 @@ namespace eosio {
 
         digest_type packed_digest()const;
 
-        transaction_id_type id()const { return unpacked_trx.id(); }
         bytes               get_raw_transaction()const;
 
         fc::time_point_sec                expiration()const { return unpacked_trx.expiration; }
@@ -533,6 +637,13 @@ namespace eosio {
 
         std::vector<transaction_receipt>   transactions; /// new or generated transactions
         extensions_type               block_extensions;
+
+        friend std::ostream &operator<<(std::ostream& output, const signed_block& msg) {
+            output << static_cast<const signed_block_header&>(msg);
+
+            return output;
+        }
+
     };
 
     enum class pbft_message_type : uint16_t {
@@ -542,6 +653,17 @@ namespace eosio {
         view_change,
         new_view
     };
+
+    constexpr auto pbft_message_type_str( pbft_message_type m ) {
+        switch( m ) {
+        case pbft_message_type::prepare : return "prepare";
+        case pbft_message_type::commit : return "commit";
+        case pbft_message_type::checkpoint : return "checkpoint";
+        case pbft_message_type::view_change : return "view_change";
+        case pbft_message_type::new_view: return "new_view";
+        default: return "undefined type";
+        }
+    }
 
     struct block_info_type {
         block_id_type   block_id;
@@ -561,6 +683,16 @@ namespace eosio {
 
 
     struct pbft_message_common {
+        friend std::ostream& operator<<(std::ostream& out, const pbft_message_common& msg) {
+            std::string sender(msg.sender);
+            out << "type: " << pbft_message_type_str(msg.type)
+                << "uuid: " << msg.uuid
+                << "sender: " << sender
+                << "chain_id: " << msg.chain_id.str()
+                << "timestamp: " << msg.timestamp.sec_since_epoch();
+            return out;
+        }
+
         pbft_message_type   type;
         explicit pbft_message_common(pbft_message_type t): type{t} {};
 
@@ -591,13 +723,11 @@ namespace eosio {
         pbft_view_type      view = 0;
         block_info_type     block_info;
         signature_type      sender_signature;
-
         bool operator==(const pbft_prepare &rhs) const {
             return common == rhs.common
                    && view == rhs.view
                    && block_info == rhs.block_info;
         }
-
         bool operator<(const pbft_prepare &rhs) const {
             if (block_info.block_num() < rhs.block_info.block_num()) {
                 return true;
@@ -607,7 +737,6 @@ namespace eosio {
                 return false;
             }
         }
-
         digest_type digest() const {
             digest_type::encoder enc;
             fc::raw::pack(enc, common);
@@ -615,7 +744,6 @@ namespace eosio {
             fc::raw::pack(enc, block_info);
             return enc.result();
         }
-
         bool is_signature_valid() const {
             try {
                 auto pk = fc::crypto::public_key(sender_signature, digest(), true);
@@ -624,22 +752,27 @@ namespace eosio {
                 return false;
             }
         }
+        friend std::ostream& operator<<(std::ostream& output, const pbft_prepare& msg) {
+            std::string sig(msg.sender_signature);
+            output << "common: " << msg.common
+                   << "view: " << msg.view
+                   << "block_num: " << msg.block_info.block_num()
+                   << "sender_signature: " << sig;
+            return output;
+        }
     };
 
     struct pbft_commit {
         explicit pbft_commit() = default;
-
         pbft_message_common common = pbft_message_common(pbft_message_type::commit);
         pbft_view_type      view = 0;
         block_info_type     block_info;
         signature_type      sender_signature;
-
         bool operator==(const pbft_commit &rhs) const {
             return common == rhs.common
                    && view == rhs.view
                    && block_info == rhs.block_info;
         }
-
         bool operator<(const pbft_commit &rhs) const {
             if (block_info.block_num() < rhs.block_info.block_num()) {
                 return true;
@@ -649,7 +782,6 @@ namespace eosio {
                 return false;
             }
         }
-
         digest_type digest() const {
             digest_type::encoder enc;
             fc::raw::pack(enc, common);
@@ -657,7 +789,6 @@ namespace eosio {
             fc::raw::pack(enc, block_info);
             return enc.result();
         }
-
         bool is_signature_valid() const {
             try {
                 auto pk = fc::crypto::public_key(sender_signature, digest(), true);
@@ -666,22 +797,42 @@ namespace eosio {
                 return false;
             }
         }
+        friend std::ostream& operator<<(std::ostream& out, const pbft_commit& msg) {
+            std::string sig(msg.sender_signature);
+            out << "common: " << msg.common
+                << "view: " << msg.view
+                << "block_num: " << msg.block_info.block_num()
+                << "sender_signature: " << sig;
+            return out;
+        }
     };
 
     struct pbft_prepared_certificate {
         explicit pbft_prepared_certificate() = default;
-
         block_info_type      block_info;
         std::set<block_id_type>   pre_prepares;
         std::vector<pbft_prepare> prepares;
-
         bool operator<(const pbft_prepared_certificate &rhs) const {
             return block_info.block_num() < rhs.block_info.block_num();
         }
-
         bool empty() const {
             return block_info == block_info_type()
                    && prepares.empty();
+        }
+
+        friend std::ostream& operator<<(std::ostream& out, const pbft_prepared_certificate& msg) {
+            if(msg.empty()) {
+                out << "empty message.";
+                return out;
+            }
+            out << "block_num: " << msg.block_info.block_num() << ", pre_prepares: ";
+            for(const auto& id:msg.pre_prepares) {
+                out << id.str() << ", ";
+            }
+            for(const auto& pre: msg.prepares) {
+                out << pre << ", ";
+            }
+            return out;
         }
     };
 
@@ -698,6 +849,11 @@ namespace eosio {
         bool empty() const {
             return block_info == block_info_type()
                    && commits.empty();
+        }
+        friend std::ostream& operator<<(std::ostream& out, const pbft_committed_certificate& msg) {
+            out << ", block_num: " << msg.block_info.block_num() << ", commits: ";
+            for(const auto& pc: msg.commits) out << pc << ", ";
+            return out;
         }
     };
 
@@ -736,6 +892,13 @@ namespace eosio {
                 return false;
             }
         }
+
+        friend std::ostream& operator<<(std::ostream& out, const pbft_checkpoint& msg) {
+            out << "common: " << msg.common
+                << ", block_num: " << msg.block_info.block_num()
+                << ", sender_signature: " << std::string(msg.sender_signature);
+            return out;
+        }
     };
 
     struct pbft_stable_checkpoint {
@@ -752,6 +915,15 @@ namespace eosio {
             return block_info == block_info_type()
                    && checkpoints.empty();
         }
+
+        friend std::ostream& operator<<(std::ostream& out, const pbft_stable_checkpoint& msg) {
+            out << "block_num: " << msg.block_info.block_num()
+                << "checkpoints: ";
+            for(const auto& cp: msg.checkpoints) {
+                out << cp << ", ";
+            }
+            return out;
+        }
     };
 
     struct pbft_view_change {
@@ -764,6 +936,16 @@ namespace eosio {
         std::vector<pbft_committed_certificate>  committed_cert;
         pbft_stable_checkpoint              stable_checkpoint;
         signature_type                      sender_signature;
+
+        friend std::ostream& operator<<(std::ostream& out, const pbft_view_change& msg) {
+            out << "common: " << msg.common
+                << ", current_view: " << msg.current_view
+                << ", target_view: " << msg.target_view
+                << ", prepared_cert: " << msg.prepared_cert
+                << ", stable_checkpoint: " << msg.stable_checkpoint
+                << ", sender_signature: " << std::string(msg.sender_signature);
+            return out;
+        }
 
         bool operator<(const pbft_view_change &rhs) const {
             return target_view < rhs.target_view;
@@ -809,6 +991,14 @@ namespace eosio {
         bool empty() const {
             return target_view == 0
                    && view_changes.empty();
+        }
+        friend std::ostream& operator<<(std::ostream& out, const pbft_view_changed_certificate& msg) {
+            out << ", target_view: " << msg.target_view
+                << ", view_changes: ";
+            for(const auto& pvc: msg.view_changes) {
+                out << pvc << ", ";
+            }
+            return out;
         }
     };
 
@@ -856,11 +1046,30 @@ namespace eosio {
                    && view_changed_cert.empty()
                    && sender_signature == signature_type();
         }
+
+        friend std::ostream& operator<<(std::ostream& out, const pbft_new_view& msg) {
+            out << "common: " << msg.common
+                << ", new_view: " << msg.prepared_cert
+                << ", committed_cert: ";
+            for(const auto& x: msg.committed_cert) {
+                out << x << ", ";
+            }
+            out << ", stable_checkpoint: " << msg.stable_checkpoint
+                << ", view_changed_cert: " << msg.view_changed_cert
+                << ", sender_signature: " << std::string(msg.sender_signature);
+            return out;
+        }
     };
 
     struct checkpoint_request_message {
         uint32_t start_block;
         uint32_t end_block;
+
+        friend std::ostream& operator<<(std::ostream& out, const checkpoint_request_message& msg) {
+            out << "start_block: " << msg.start_block
+                << "end_block: " << msg.end_block;
+            return out;
+        }
     };
 
     struct compressed_pbft_message {

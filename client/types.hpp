@@ -37,7 +37,20 @@
 #include <fc/time.hpp>
 #include <fc/bitutil.hpp>
 
+#define EOS_ASSERT( expr, exc_type, FORMAT, ... )                \
+   FC_MULTILINE_MACRO_BEGIN                                           \
+   if( !(expr) )                                                      \
+      FC_THROW_EXCEPTION( exc_type, FORMAT, __VA_ARGS__ );            \
+   FC_MULTILINE_MACRO_END
+
+FC_DECLARE_EXCEPTION( chain_exception, 3000000, "blockchain exception" )
+FC_DECLARE_DERIVED_EXCEPTION( plugin_exception, chain_exception, 3110000, "Plugin exception" )
+FC_DECLARE_DERIVED_EXCEPTION( plugin_config_exception, plugin_exception, 3110006, "Incorrect plugin configuration" )
+FC_DECLARE_DERIVED_EXCEPTION( chain_type_exception, chain_exception, 3010000, "chain type exception" )
+FC_DECLARE_DERIVED_EXCEPTION( name_type_exception, chain_type_exception, 3010001, "Invalid name" )
+
 namespace eosio {
+
     using block_id_type       = fc::sha256;
     using public_key_type  = fc::crypto::public_key;
     using signature_type   = fc::crypto::signature;
