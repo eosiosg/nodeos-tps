@@ -1,3 +1,0 @@
-[submodule "client/fc"]
-	path = client/fc
-	url = https://github.com/EOSIO/fc
