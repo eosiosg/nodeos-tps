@@ -11,21 +11,11 @@
 using namespace std;
 class FakeData {
 public:
-    static eosio::handshake_message fakeHandShakeMessage() {
+    static eosio::handshake_message fakeHandShakeMessage(eosio::chain_id_type cid) {
         eosio::handshake_message h;
         h.network_version = 1206;
 
-        /*uint64_t chain_id[4] = {
-                *//*5134146145835746767ul,
-                13995347844241873183ul,
-                15955289689732806957ul,
-                5754729454247128513ul*//*
-                0,0,0,0
-        };
-        memcpy(h.chain_id._hash, chain_id, sizeof(chain_id));
-        */
-        eosio::chain_id_type chain_id("02ce5aa2a05e594cc3c041fc8989cf8ff4fd6efe828a23d7b3825d51b70fa2ed");
-        h.chain_id = chain_id;
+        h.chain_id = cid;
 
         uint64_t node_id[4] = {
                 16341233654929650305ul,
@@ -49,14 +39,14 @@ public:
         return h;
     }
 
-    static eosio::handshake_message invalidFakeHandShakeMessage() {
-        auto h = fakeHandShakeMessage();
+    static eosio::handshake_message invalidFakeHandShakeMessage(eosio::chain_id_type cid) {
+        auto h = fakeHandShakeMessage(cid);
         h.last_irreversible_block_num = UINT32_MAX;
         return h;
     }
 
-    static eosio::handshake_message acceptHandshakeMessage() {
-        auto h = fakeHandShakeMessage();
+    static eosio::handshake_message acceptHandshakeMessage(eosio::chain_id_type cid) {
+        auto h = fakeHandShakeMessage(cid);
         h.generation = 1;
         return h;
     }

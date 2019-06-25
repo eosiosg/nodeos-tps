@@ -22,6 +22,17 @@
 #include <utility>
 #include "protocol.hpp"
 #include "fake_data.hpp"
+#include "eosio.token.api.hpp"
+#include "eosio.system.abi.hpp"
+#include "abi_def.hpp"
+#include "abi_serializer.hpp"
+#include "symbol.hpp"
+#include "asset.hpp"
+#include "authority.hpp"
+#include "contract_types.hpp"
+#include "eosio.token.wast.hpp"
+#include <boost/asio/high_resolution_timer.hpp>
+
 
 using boost::asio::ip::tcp;
 using namespace eosio;
@@ -44,17 +55,74 @@ constexpr auto     def_sync_fetch_span = 100;
 using signed_block_ptr = std::shared_ptr<signed_block>;
 using packed_transaction_ptr = std::shared_ptr<packed_transaction>;
 
+// 测试的数据信息存储在此
+struct TestInfo {
+    fc::microseconds abi_serializer_max_time{150000000};
+    chain_id_type chain_id;
+    block_id_type head_block_id;
+    action act_a_to_b;
+    action act_b_to_a;
+    name user1;
+    name user2;
+    fc::crypto::private_key user1PK;
+    fc::crypto::private_key user2PK;
+    name contractName;
+    string tokenName; //BOS, EOS, SYS, ......
+    uint64_t timer_timeout;
+    unsigned batch;
+    boost::asio::steady_timer _timer;
+    TestInfo(boost::asio::io_context& ioc):_timer(ioc){};
+    void update(const signed_block &msg) {
+        this->head_block_id = msg.previous;
+    }
+
+};
+
+class OutputGuard {
+    string thing;
+    fc::time_point start;
+    ostream & out;
+    OutputGuard() = delete;
+public:
+    OutputGuard(ostream& out, string thing):out(out),thing(thing) {
+        start = fc::time_point::now();
+        out << "Begin do \"" << thing << "\"" << endl;
+    }
+    virtual ~OutputGuard() {
+        out << "End do \"" << thing
+            << "\"," << "time cost "
+            << (fc::time_point::now() - start).count()/1000.0
+            << " ms" << endl;
+    }
+};
+
 
 class Client {
+    TestInfo testInfo;
     tcp::socket _socket;
     tcp::resolver _resolver;
     boost::asio::steady_timer _timer;
     fc::message_buffer<1024*1024> _messageBuffer;
     fc::optional<std::size_t> _outStandingReadBytes; //下次需要读取的字节数
     u_char *buffer;
-
+    ostream &output = cout;
+    void makePeerSync(void);
+    void performanceTest(void);
+    void createTestAccounts(const string& init_name, const string& init_priv_key, const string& core_symbol);
+    void executeTest(void);
+    void startGeneration(const string& salt, const uint64_t& period, const uint64_t& batch_size);
+    void sendTransferTransaction();
 public:
-    Client(boost::asio::io_context& ioc, const char* host, const char* port);
+    Client(boost::asio::io_context& ioc,
+           const char* host,
+           const char* port,
+           const char* chain_id,
+           const char* user1,
+           const char* user1PK,
+           const char* user2,
+           const char* user2PK,
+           const char* tokenName,
+           const char* contractName);
     virtual ~Client(void);
     void OnConnect(boost::system::error_code ec, tcp::endpoint endpoint);
     bool processNextMessage(uint32_t messageLen);
@@ -83,9 +151,7 @@ public:
     void StartSendTimeMessage();
     void StartHandshakeMessage();
     void DoSendTimeMessage();
-    void timeAsyncExec(uint64_t seconds, std::function<void(void)> f);
     void sendHandshakeMessage(handshake_message && msg);
-    void sendSyncRequestMessage(sync_request_message&& msg);
     template <typename T>
     void sendMessage(T && msg) {
         auto n = net_message(msg);
@@ -100,12 +166,12 @@ public:
                 boost::asio::buffer(buffer, buffer_size),
                 [this](boost::system::error_code ec, std::size_t w){
                     if(ec) {
-                        cerr << "Error when asyn_write_some handshake_message." << endl;
+                        //cerr << "Error when asyn_write_some handshake_message." << endl;
                         cerr << ec.message() << endl;
                         _socket.close();
                         return;
                     }
-                    cout << "async write handshake_message successfully." << endl;
+                    //cout << "async write handshake_message successfully." << endl;
                 });
     }
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
