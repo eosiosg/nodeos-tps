@@ -99,11 +99,10 @@ Client::Client(
         const char* user2PK,
         const char* tokenName,
         const char* contractName):
-_socket(ioc), _resolver(ioc), _timer(ioc), testInfo(ioc){
-    _resolver.async_resolve(tcp::v4(), host, port,
-                            std::bind(&Client::OnResolve, this,
-                                      std::placeholders::_1,
-                                      std::placeholders::_2));
+_socket(ioc), _resolver(ioc), _timer(ioc), testInfo(ioc), ioc(ioc){
+    this->host = string(host);
+    this->port = string(port);
+    reConnect();
     testInfo.chain_id = chain_id_type(string(cid));
     testInfo.user1 = name(string(user1));
     testInfo.user2 = name(string(user2));
@@ -122,6 +121,7 @@ void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
     if (ec) {
         std::cout << "Connect failed: " << ec.message() << std::endl;
         _socket.close();
+        ioc.stop();
         return;
     }
     StartSendTimeMessage();
@@ -225,10 +225,10 @@ eosio::chain::action create_action_buyram(const name &from, const name &to, cons
 
 
 void Client::startGeneration(const string& salt, const uint64_t& period, const uint64_t& batch_size) {
-    if(period < 1 || period > 100)
+    /*if(period < 1 || period > 100)
         throw fc::exception(fc::invalid_operation_exception_code);
-    if(batch_size < 1 || batch_size > 10000)
-        throw fc::exception(fc::invalid_operation_exception_code);
+    if(batch_size < 1 || batch_size > 1000000)
+        throw fc::exception(fc::invalid_operation_exception_code);*/
     auto abi_serializer_max_time = testInfo.abi_serializer_max_time;
     abi_serializer eosio_token_serializer{fc::json::from_string(eosio_token_abi).as<abi_def>(), abi_serializer_max_time};
     //create the actions here
@@ -443,7 +443,7 @@ void Client::sendTransferTransaction() {
 //}
 
 void Client::executeTest(void) {
-    startGeneration("abcdefg", 3, 10000);
+    startGeneration("abcdefg", 1, 10000);
 }
 
 
@@ -543,7 +543,8 @@ void Client::handleMessage(const compressed_pbft_message &msg) {
 
 
 void Client::StartReadMessage() {
-    if(!_socket.is_open()) return;
+    if(!_socket.is_open())
+        return;
     std::size_t minimum_read = _outStandingReadBytes ? *_outStandingReadBytes:message_header_size;
     auto completion_handler = [minimum_read](boost::system::error_code ec, std::size_t bytes_transferred) -> std::size_t {
         if(ec||bytes_transferred >= minimum_read)
@@ -576,6 +577,7 @@ void Client::StartReadMessage() {
                             if(messageLength > def_send_buffer_size*2 || messageLength == 0) {
                                 cerr << "Unexpected length of this message." << endl;
                                 _socket.close();
+                                ioc.stop();
                                 return;
                             }
                             auto totalMessageLength = messageLength + message_header_size;
@@ -596,10 +598,12 @@ void Client::StartReadMessage() {
                     } else {
                         cerr << "error in read, " << ec.message() << endl;
                         _socket.close();
+                        ioc.stop();
                     }
                 } catch (...) {
                     cerr << "Catch exception." << endl;
                     _socket.close();
+                    ioc.stop();
                 }
             });
 }
@@ -609,7 +613,8 @@ void Client::StartSendTimeMessage() {
 }
 
 void Client::DoSendTimeMessage() {
-    if(!_socket.is_open()) return;
+    if(!_socket.is_open())
+        return;
     auto time = std::chrono::system_clock::now().time_since_epoch().count();
     time_message msg;
     msg.rec = time;
@@ -635,6 +640,7 @@ void Client::DoSendTimeMessage() {
                     cerr << "Error when asyn_write_some." << endl;
                     cerr << ec.message() << endl;
                     _socket.close();
+                    ioc.stop();
                     return;
                 }
                 output << "async write successfully." << endl;
@@ -679,9 +685,10 @@ int main(int argc, char* argv[]) {
     const char* tokenName = argv[8];
     const char* contractName = argv[9];
 
-    boost::asio::io_service ioc;
-    Client client(ioc, host, port, chain_id, user1, user1PK, user2, user2PK, tokenName, contractName);
-
-    ioc.run();
-    return 0;
+    while(true) {
+        boost::asio::io_service ioc;
+        Client client(ioc, host, port, chain_id, user1, user1PK, user2, user2PK, tokenName, contractName);
+        ioc.run();
+        cout << "Reconnect." << endl;
+    }
 }

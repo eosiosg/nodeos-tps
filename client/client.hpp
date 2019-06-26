@@ -106,12 +106,21 @@ class Client {
     fc::optional<std::size_t> _outStandingReadBytes; //下次需要读取的字节数
     u_char *buffer;
     ostream &output = cout;
+    string host;
+    string port;
+    boost::asio::io_context& ioc;
     void makePeerSync(void);
     void performanceTest(void);
-    void createTestAccounts(const string& init_name, const string& init_priv_key, const string& core_symbol);
+    //void createTestAccounts(const string& init_name, const string& init_priv_key, const string& core_symbol);
     void executeTest(void);
     void startGeneration(const string& salt, const uint64_t& period, const uint64_t& batch_size);
     void sendTransferTransaction();
+    void reConnect(void) {
+        _resolver.async_resolve(tcp::v4(), host, port,
+                std::bind(&Client::OnResolve, this,
+                        std::placeholders::_1,
+                        std::placeholders::_2));
+    }
 public:
     Client(boost::asio::io_context& ioc,
            const char* host,
@@ -169,6 +178,7 @@ public:
                         //cerr << "Error when asyn_write_some handshake_message." << endl;
                         cerr << ec.message() << endl;
                         _socket.close();
+                        ioc.stop();
                         return;
                     }
                     //cout << "async write handshake_message successfully." << endl;
