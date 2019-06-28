@@ -2,6 +2,7 @@
 // Created by zwg on 19-6-12.
 //
 #include "client.hpp"
+#include "outbuffer.hpp"
 enum { BUF_SIZE = 1024 };
 
 class queued_buffer : boost::noncopyable {

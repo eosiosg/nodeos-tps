@@ -97,7 +97,7 @@ public:
 };
 
 
-class Client {
+class Client : public std::enable_shared_from_this<Client>{
     TestInfo testInfo;
     tcp::socket _socket;
     tcp::resolver _resolver;

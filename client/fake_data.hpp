@@ -31,7 +31,7 @@ public:
         h.sig = fc::crypto::signature();
         h.p2p_address = "127.0.0.1:9876 - 8172bdf";
         h.os = "linux";
-        h.agent = "\"EOS Test Agent\"";
+        h.agent = "\"nodeos-tps\"";
         h.head_id = fc::sha256();
         h.head_num = 0;
         h.last_irreversible_block_num = 0;
