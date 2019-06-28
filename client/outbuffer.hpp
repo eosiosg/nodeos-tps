@@ -5,7 +5,11 @@
 #pragma once
 
 #include <array>
+#include <list>
+#include <boost/asio/buffer.hpp>
 #include "protocol.hpp"
+
+using namespace boost::asio;
 
 class OutBuffer {
     uint8_t* pBuffer;
@@ -34,4 +38,28 @@ public:
         fc::raw::pack(ds, n);
         return true;
     }
+};
+
+class AsyncBufferPool {
+public:
+    uint8_t* newBuffer(std::size_t len) {
+        return new uint8_t[len];
+    }
+
+    void deleteBuffer(uint8_t* buffer) {
+        delete [] buffer;
+    }
+};
+
+class BoostBufferPool {
+    std::list<BOOST_ASIO_MUTABLE_BUFFER> v;
+public:
+    BOOST_ASIO_MUTABLE_BUFFER& add(uint8_t* buffer, std::size_t buffer_size) {
+        v.push_back(boost::asio::buffer(buffer, buffer_size));
+        return v.back();
+    }
+
+/*    void deleteBuffer(boost::asio::buffer* buffer) {
+        delete [] buffer;
+    }*/
 };

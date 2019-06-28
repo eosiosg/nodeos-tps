@@ -111,11 +111,12 @@ _socket(ioc), _resolver(ioc), _timer(ioc), testInfo(ioc), ioc(ioc){
     testInfo.user2PK = fc::crypto::private_key(string(user2PK));
     testInfo.tokenName = string(tokenName);
     testInfo.contractName = name(string(contractName));
-    buffer = new u_char[1024*1024*16];
+    //buffer = new u_char[1024*1024*16];
 }
 
 Client::~Client(void) {
-    delete [] buffer;
+    cout << "Client::~Client(void)" << endl;
+    //delete [] buffer;
 }
 
 void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
@@ -299,7 +300,7 @@ void Client::sendTransferTransaction() {
     } catch ( const fc::exception& e ) {
         output << "fc::exception :" << e.what() << endl;
     }
-    testInfo._timer.expires_after(std::chrono::seconds(testInfo.timer_timeout));
+    testInfo._timer.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
     testInfo._timer.async_wait(std::bind(&Client::sendTransferTransaction, this));
 }
 
@@ -444,7 +445,7 @@ void Client::sendTransferTransaction() {
 //}
 
 void Client::executeTest(void) {
-    startGeneration("abcdefg", 1, 10000);
+    startGeneration("abcdefg", 10, 10000);
 }
 
 
@@ -470,7 +471,7 @@ void Client::handleMessage(const notice_message& msg) {
     _timer.async_wait(std::bind(&Client::makePeerSync, this));
 
     // 开始性能测试
-    _timer.expires_after(std::chrono::seconds(10));
+    _timer.expires_after(std::chrono::seconds(50));
     _timer.async_wait(std::bind(&Client::performanceTest, this));
 }
 
@@ -504,13 +505,13 @@ void Client::handleMessage(const request_p2p_message& msg) {
 }
 
 void Client::handleMessage(const pbft_prepare &msg) {
-    output << "pbft_prepare ----------";
-    output << msg << endl;
+    //output << "pbft_prepare ----------";
+    //output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_commit &msg) {
-    output << "pbft_commit ----------";
-    output << msg << endl;
+    //output << "pbft_commit ----------";
+    //output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_view_change &msg) {
@@ -548,8 +549,9 @@ void Client::StartReadMessage() {
         return;
     std::size_t minimum_read = _outStandingReadBytes ? *_outStandingReadBytes:message_header_size;
     auto completion_handler = [minimum_read](boost::system::error_code ec, std::size_t bytes_transferred) -> std::size_t {
-        if(ec||bytes_transferred >= minimum_read)
+        if(ec||bytes_transferred >= minimum_read) {
             return 0;
+        }
         return minimum_read - bytes_transferred;
     };
     boost::asio::async_read(
@@ -629,14 +631,15 @@ void Client::DoSendTimeMessage() {
     size_t header_size = sizeof(payload_size);
     size_t buffer_size = header_size + payload_size;
 
-    char buffer[1024];
-    fc::datastream<char *> ds(buffer, buffer_size);
+    uint8_t * buffer = bufferPool.newBuffer(buffer_size);
+    fc::datastream<uint8_t *> ds(buffer, buffer_size);
     ds.write(header, header_size);
     fc::raw::pack(ds, n);
 
     _socket.async_write_some(
             boost::asio::buffer(buffer, buffer_size),
-            [this](boost::system::error_code ec, std::size_t w){
+            [this, buffer](boost::system::error_code ec, std::size_t w){
+                bufferPool.deleteBuffer(buffer);
                 if(ec) {
                     cerr << "Error when asyn_write_some." << endl;
                     cerr << ec.message() << endl;

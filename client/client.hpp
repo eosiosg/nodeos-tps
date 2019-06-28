@@ -32,7 +32,7 @@
 #include "contract_types.hpp"
 #include "eosio.token.wast.hpp"
 #include <boost/asio/high_resolution_timer.hpp>
-
+#include "outbuffer.hpp"
 
 using boost::asio::ip::tcp;
 using namespace eosio;
@@ -102,9 +102,11 @@ class Client : public std::enable_shared_from_this<Client>{
     tcp::socket _socket;
     tcp::resolver _resolver;
     boost::asio::steady_timer _timer;
-    fc::message_buffer<1024*1024> _messageBuffer;
+    fc::message_buffer<1024*1024*20> _messageBuffer;
     fc::optional<std::size_t> _outStandingReadBytes; //下次需要读取的字节数
     u_char *buffer;
+    AsyncBufferPool bufferPool;
+    BoostBufferPool boostBufferPool;
     ostream &output = cout;
     string host;
     string port;
@@ -163,19 +165,23 @@ public:
     void sendHandshakeMessage(handshake_message && msg);
     template <typename T>
     void sendMessage(T && msg) {
+        if(!_socket.is_open()) return;
         auto n = net_message(msg);
         uint32_t payload_size = fc::raw::pack_size(n);
         char *header = reinterpret_cast<char *>(&payload_size);
         size_t header_size = sizeof(payload_size);
         size_t buffer_size = header_size + payload_size;
-        fc::datastream<u_char *> ds(buffer, buffer_size);
+        //cout << "buffer size:" << buffer_size << endl;
+        uint8_t * buffer = bufferPool.newBuffer(buffer_size);
+        fc::datastream<uint8_t *> ds(buffer, buffer_size);
         ds.write(header, header_size);
         fc::raw::pack(ds, n);
         _socket.async_write_some(
                 boost::asio::buffer(buffer, buffer_size),
-                [this](boost::system::error_code ec, std::size_t w){
+                [this, buffer](boost::system::error_code ec, std::size_t w){
+                    bufferPool.deleteBuffer(buffer);
                     if(ec) {
-                        //cerr << "Error when asyn_write_some handshake_message." << endl;
+                        cerr << "Error when asyn_write_some message." << endl;
                         cerr << ec.message() << endl;
                         _socket.close();
                         ioc.stop();
