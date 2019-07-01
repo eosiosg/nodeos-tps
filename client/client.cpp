@@ -3,6 +3,7 @@
 //
 #include "client.hpp"
 #include "outbuffer.hpp"
+#include <cstdlib>
 enum { BUF_SIZE = 1024 };
 
 class queued_buffer : boost::noncopyable {
@@ -99,8 +100,12 @@ Client::Client(
         const char* user2,
         const char* user2PK,
         const char* tokenName,
-        const char* contractName):
-_socket(ioc), _resolver(ioc), _timer(ioc), testInfo(ioc), ioc(ioc){
+        const char* contractName,
+        uint64_t period,
+        uint32_t eachTime):
+_socket(ioc), _resolver(ioc), ioc(ioc),
+timerOutQueue(ioc), timerMakePeerSync(ioc),
+timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
     this->host = string(host);
     this->port = string(port);
     reConnect();
@@ -129,6 +134,7 @@ void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
     StartSendTimeMessage();
     StartReadMessage();
     StartHandshakeMessage();
+    StartSendoutData();
 }
 
 void Client::sendHandshakeMessage(handshake_message && msg) {
@@ -226,13 +232,11 @@ eosio::chain::action create_action_buyram(const name &from, const name &to, cons
 }
 
 
-void Client::startGeneration(const string& salt, const uint64_t& period, const uint64_t& batch_size) {
-    /*if(period < 1 || period > 100)
-        throw fc::exception(fc::invalid_operation_exception_code);
-    if(batch_size < 1 || batch_size > 1000000)
-        throw fc::exception(fc::invalid_operation_exception_code);*/
-    auto abi_serializer_max_time = testInfo.abi_serializer_max_time;
-    abi_serializer eosio_token_serializer{fc::json::from_string(eosio_token_abi).as<abi_def>(), abi_serializer_max_time};
+void Client::startGeneration(const string& salt) {
+    abi_serializer eosio_token_serializer{
+        fc::json::from_string(eosio_token_abi).as<abi_def>(),
+        testInfo.abi_serializer_max_time
+    };
     //create the actions here
     testInfo.act_a_to_b.account = testInfo.contractName;
     testInfo.act_a_to_b.name = name("transfer");
@@ -246,7 +250,7 @@ void Client::startGeneration(const string& salt, const uint64_t& period, const u
                     ("user1", testInfo.user1.to_string())
                     ("user2", testInfo.user2.to_string())
                     ("token", testInfo.tokenName))),
-            abi_serializer_max_time);
+            testInfo.abi_serializer_max_time);
 
     testInfo.act_b_to_a.account = testInfo.contractName;
     testInfo.act_b_to_a.name = name("transfer");
@@ -260,22 +264,19 @@ void Client::startGeneration(const string& salt, const uint64_t& period, const u
                     ("user1", testInfo.user1.to_string())
                     ("user2", testInfo.user2.to_string())
                     ("token", testInfo.tokenName))),
-            abi_serializer_max_time);
+            testInfo.abi_serializer_max_time);
 
-    testInfo.timer_timeout = period;
-    testInfo.batch = batch_size;
     sendTransferTransaction();
 }
 
 void Client::sendTransferTransaction() {
-    OutputGuard og(output, string("sendTransferTransaction"));
+    //OutputGuard og(output, string("sendTransferTransaction"));
     try {
         auto chainid = testInfo.chain_id;
         static uint64_t nonce = static_cast<uint64_t>(fc::time_point::now().sec_since_epoch()) << 32;
 
         block_id_type reference_block_id = testInfo.head_block_id;
-
-        for(unsigned int i = 0; i < testInfo.batch; ++i) {
+        for(auto i = 0; i < testInfo.batch; i++) {
             {
                 signed_transaction trx;
                 trx.actions.push_back(testInfo.act_a_to_b);
@@ -297,11 +298,13 @@ void Client::sendTransferTransaction() {
                 sendMessage(packed_transaction(trx));
             }
         }
+        testInfo.timerSendTransferTransaction.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
+        testInfo.timerSendTransferTransaction.async_wait(std::bind(&Client::sendTransferTransaction, this));
     } catch ( const fc::exception& e ) {
         output << "fc::exception :" << e.what() << endl;
+    } catch (const std::exception& e2) {
+        output << "std::exception:" << e2.what() << endl;
     }
-    testInfo._timer.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
-    testInfo._timer.async_wait(std::bind(&Client::sendTransferTransaction, this));
 }
 
 
@@ -444,15 +447,9 @@ void Client::sendTransferTransaction() {
 //
 //}
 
-void Client::executeTest(void) {
-    startGeneration("abcdefg", 10, 10000);
-}
-
-
 void Client::performanceTest(void) {
     OutputGuard og(output, string("performanceTest"));
-    //createTestAccounts("eosio", "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3", "BOS");
-    executeTest();
+    startGeneration("abcdefg");
 }
 
 
@@ -467,33 +464,33 @@ void Client::handleMessage(const notice_message& msg) {
     output << msg << endl;
 
     // 让对端认为数据已经同步(将sync->true)
-    _timer.expires_after(std::chrono::seconds(10));
-    _timer.async_wait(std::bind(&Client::makePeerSync, this));
+    timerMakePeerSync.expires_after(std::chrono::seconds(5));
+    timerMakePeerSync.async_wait(std::bind(&Client::makePeerSync, this));
 
     // 开始性能测试
-    _timer.expires_after(std::chrono::seconds(50));
-    _timer.async_wait(std::bind(&Client::performanceTest, this));
+    testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(10));
+    testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
 }
 
 void Client::handleMessage(const request_message& msg) {
-    output << "request_message ----------";
-    output << msg << endl;
+    /*output << "request_message ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const sync_request_message& msg) {
-    output << "sync_request_message ----------";
-    output << msg << endl;
+    /*output << "sync_request_message ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const signed_block_ptr& msg) {
-    output << "signed_block_message ----------";
-    output << *msg << endl;
+    /*output << "signed_block_message ----------";
+    output << *msg << endl;*/
     testInfo.update(*msg);
 }
 
 void Client::handleMessage(const packed_transaction_ptr& msg) {
-    output << "packed_transaction_ptr ----------";
-    output << *msg << endl;
+    /*output << "packed_transaction_ptr ----------";
+    output << *msg << endl;*/
 }
 
 void Client::handleMessage(const response_p2p_message& msg) {
@@ -515,28 +512,28 @@ void Client::handleMessage(const pbft_commit &msg) {
 }
 
 void Client::handleMessage(const pbft_view_change &msg) {
-    output << "pbft_view_change ----------";
-    output << msg << endl;
+   /* output << "pbft_view_change ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_new_view &msg) {
-    output << "pbft_new_view ----------";
-    output << msg << endl;
+    /*output << "pbft_new_view ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_checkpoint &msg) {
-    output << "pbft_checkpoint ----------";
-    output << msg << endl;
+    /*output << "pbft_checkpoint ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_stable_checkpoint &msg) {
-    output << "pbft_stable_checkpoint ----------";
-    output << msg << endl;
+    /*output << "pbft_stable_checkpoint ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const checkpoint_request_message &msg) {
-    output << "checkpoint_request_message ----------";
-    output << msg << endl;
+    /*output << "checkpoint_request_message ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const compressed_pbft_message &msg) {
@@ -615,6 +612,114 @@ void Client::StartSendTimeMessage() {
     DoSendTimeMessage();
 }
 
+void Client::DoSendoutData(void) {
+    try {
+
+        if (!_socket.is_open()) return;
+        if (outQueue.empty()) {
+            //队列为空1ms之后再次唤醒
+            timerOutQueue.expires_after(std::chrono::microseconds(1000));
+            timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
+            return;
+        }
+
+        const auto& netMsg = outQueue.front();
+        int32_t payload_size = fc::raw::pack_size(netMsg);
+        char* header = reinterpret_cast<char*>(&payload_size);
+        size_t header_size = sizeof(payload_size);
+        size_t bufferSize = header_size+payload_size;
+        uint8_t* buffer = bufferPool.newBuffer(bufferSize);
+        fc::datastream<uint8_t*> ds(buffer, bufferSize);
+        ds.write(header, header_size);
+        fc::raw::pack(ds, netMsg);
+        auto complete_handler = [bufferSize](boost::system::error_code ec,
+                std::size_t bytes_transferred) -> std::size_t {
+            return (ec || bufferSize<=bytes_transferred) ? 0 : (bufferSize-bytes_transferred);
+        };
+
+        boost::asio::async_write(
+                _socket,
+                boost::asio::buffer(buffer, bufferSize),
+                complete_handler,
+                [this, buffer, bufferSize](boost::system::error_code ec, std::size_t w) {
+                    this->bufferPool.deleteBuffer(buffer);
+                    this->outQueue.pop_front();
+
+                    if (w!=bufferSize)
+                        cerr << "w != bufferSize:" << "w(" << w << "), (" << bufferSize << ")" << endl;
+                    if (ec) {
+                        cerr << "Error when asyn_write buffer." << endl;
+                        cerr << ec.message() << endl;
+                    }
+
+                    if (ec || w!=bufferSize) {
+                        _socket.close();
+                        ioc.stop();
+                        return;
+                    }
+
+                    this->DoSendoutData();
+                });
+    }catch (fc::exception& e){
+        cerr << "fc::exception :" << e.what() << endl;
+    }catch (std::exception& e) {
+        cerr << "std::exception :" << e.what() << endl;
+    }
+}
+
+void Client::StartSendoutData(void) {
+    DoSendoutData();
+}
+
+void Client::asyncWriteData(uint8_t* buffer, std::size_t bufferSize) {
+    if(bufferSize == 0) return;
+    if(!_socket.is_open()) return;
+    auto complete_handler = [bufferSize](boost::system::error_code ec, std::size_t bytes_transferred) -> std::size_t{
+        if(ec||bufferSize <= bytes_transferred) {
+            return 0;
+        }
+        return bufferSize - bytes_transferred;
+    };
+    boost::asio::async_write(
+            _socket,
+            boost::asio::buffer(buffer, bufferSize),
+            complete_handler,
+            [this, buffer, bufferSize](boost::system::error_code ec, std::size_t w){
+                bufferPool.deleteBuffer(buffer);
+                if(w != bufferSize) {
+                    cerr << "w != bufferSize:" << "w(" << w << "), (" << bufferSize << ")" << endl;
+                    _socket.close();
+                    ioc.stop();
+                    return;
+                }
+                if(ec) {
+                    cerr << "Error when asyn_write buffer." << endl;
+                    cerr << ec.message() << endl;
+                    _socket.close();
+                    ioc.stop();
+                    return;
+                }
+            });
+    /*_socket.async_write_some(
+            boost::asio::buffer(buffer, bufferSize),
+            [this, buffer, bufferSize, delPointer](boost::system::error_code ec, std::size_t w){
+                if(ec||(w > bufferSize)) {
+                    if(delPointer) bufferPool.deleteBuffer(buffer);
+                    cerr << "Error when asyn_write_some." << endl;
+                    cerr << ec.message() << endl;
+                    _socket.close();
+                    ioc.stop();
+                    return;
+                }
+                if(w < bufferSize) {
+                    cerr << "w != buffer_size," << "w = " << w << ", buffer_size = " << bufferSize << endl;
+                    asyncWriteData(buffer + w, bufferSize - w, false);
+                }
+                if(delPointer) bufferPool.deleteBuffer(buffer);
+                //output << "async write successfully." << endl;
+            });*/
+}
+
 void Client::DoSendTimeMessage() {
     if(!_socket.is_open())
         return;
@@ -624,33 +729,9 @@ void Client::DoSendTimeMessage() {
     msg.org = 0;
     msg.xmt = time;
 
-    auto n = net_message(msg);
-
-    uint32_t payload_size = fc::raw::pack_size(n);
-    char *header = reinterpret_cast<char *>(&payload_size);
-    size_t header_size = sizeof(payload_size);
-    size_t buffer_size = header_size + payload_size;
-
-    uint8_t * buffer = bufferPool.newBuffer(buffer_size);
-    fc::datastream<uint8_t *> ds(buffer, buffer_size);
-    ds.write(header, header_size);
-    fc::raw::pack(ds, n);
-
-    _socket.async_write_some(
-            boost::asio::buffer(buffer, buffer_size),
-            [this, buffer](boost::system::error_code ec, std::size_t w){
-                bufferPool.deleteBuffer(buffer);
-                if(ec) {
-                    cerr << "Error when asyn_write_some." << endl;
-                    cerr << ec.message() << endl;
-                    _socket.close();
-                    ioc.stop();
-                    return;
-                }
-                output << "async write successfully." << endl;
-            });
-    _timer.expires_after(std::chrono::seconds(50));
-    _timer.async_wait(std::bind(&Client::DoSendTimeMessage, this));
+    sendMessage(msg);
+    timerSendTimeMessage.expires_after(std::chrono::seconds(5));
+    timerSendTimeMessage.async_wait(std::bind(&Client::DoSendTimeMessage, this));
 }
 
 void Client::OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints) {
@@ -669,14 +750,14 @@ int main(int argc, char* argv[]) {
     for(auto i = 1; i < argc; i++) {
         cout << argv[i] << endl;
     }
-    if(argc != 10) {
+    if(argc != 12) {
         cerr << "Invalid parameter." << endl;
-        cerr << "Usage: ./client ip port chain_id user1 private_key_of_user1 user2 private_key_of_user2 token_name contract_name" << endl;
+        cerr << "Usage: ./client ip port chain_id user1 private_key_of_user1 user2 private_key_of_user2 token_name contract_name microseconds_interval count_for_each" << endl;
         cerr << "Example: ./client 127.0.0.1 9876 "
              << "cf057bbfb72640471fd910bcb67639c22df9f92470936cddc1ade0e2f2e7dc4f "
              << "aaaaaaaaaaaa 5HsvPQ2wBttkMMYXfJUw2QW5pYh5ReSqVBqPhprWh3GGhiQyezC "
              << "bbbbbbbbbbbb 5JAghZg5An1L8DdT75CyQSaZAHuofY9mst52oCW9gQUQjs1n76L "
-             << "BOS eosio.token" << endl;
+             << "BOS eosio.token 1000 2" << endl;
         exit(1);
     }
     const char* host = argv[1];
@@ -688,11 +769,16 @@ int main(int argc, char* argv[]) {
     const char* user2PK = argv[7];
     const char* tokenName = argv[8];
     const char* contractName = argv[9];
+    uint64_t period = static_cast<uint64_t>(atol(argv[10]));
+    uint32_t eachTime = static_cast<uint32_t>(atoi(argv[11]));
 
-    while(true) {
+    //while(true) {
         boost::asio::io_service ioc;
-        Client client(ioc, host, port, chain_id, user1, user1PK, user2, user2PK, tokenName, contractName);
+        Client client(
+                ioc, host, port, chain_id,
+                user1, user1PK, user2, user2PK,
+                tokenName, contractName, period, eachTime);
         ioc.run();
         cout << "Reconnect." << endl;
-    }
+    //}
 }

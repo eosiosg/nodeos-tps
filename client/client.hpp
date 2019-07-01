@@ -54,7 +54,7 @@ constexpr auto     def_sync_fetch_span = 100;
 
 using signed_block_ptr = std::shared_ptr<signed_block>;
 using packed_transaction_ptr = std::shared_ptr<packed_transaction>;
-
+void coutRaw(uint8_t* buffer, size_t size);
 // 测试的数据信息存储在此
 struct TestInfo {
     fc::microseconds abi_serializer_max_time{150000000};
@@ -70,8 +70,12 @@ struct TestInfo {
     string tokenName; //BOS, EOS, SYS, ......
     uint64_t timer_timeout;
     unsigned batch;
-    boost::asio::steady_timer _timer;
-    TestInfo(boost::asio::io_context& ioc):_timer(ioc){};
+    boost::asio::steady_timer timerSendTransferTransaction;
+    boost::asio::steady_timer timerPerformanceTest;
+    TestInfo(boost::asio::io_context& ioc, uint64_t period, uint32_t eachTime):
+            timerSendTransferTransaction(ioc),
+            timerPerformanceTest(ioc),
+            batch(eachTime), timer_timeout(period) { };
     void update(const signed_block &msg) {
         this->head_block_id = msg.previous;
     }
@@ -101,21 +105,20 @@ class Client : public std::enable_shared_from_this<Client>{
     TestInfo testInfo;
     tcp::socket _socket;
     tcp::resolver _resolver;
-    boost::asio::steady_timer _timer;
+    boost::asio::steady_timer timerMakePeerSync;
+    boost::asio::steady_timer timerSendTimeMessage;
+    boost::asio::steady_timer timerOutQueue;
     fc::message_buffer<1024*1024*20> _messageBuffer;
     fc::optional<std::size_t> _outStandingReadBytes; //下次需要读取的字节数
-    u_char *buffer;
     AsyncBufferPool bufferPool;
-    BoostBufferPool boostBufferPool;
     ostream &output = cout;
     string host;
     string port;
+    std::list<net_message> outQueue;
     boost::asio::io_context& ioc;
     void makePeerSync(void);
     void performanceTest(void);
-    //void createTestAccounts(const string& init_name, const string& init_priv_key, const string& core_symbol);
-    void executeTest(void);
-    void startGeneration(const string& salt, const uint64_t& period, const uint64_t& batch_size);
+    void startGeneration(const string& salt);
     void sendTransferTransaction();
     void reConnect(void) {
         _resolver.async_resolve(tcp::v4(), host, port,
@@ -123,6 +126,8 @@ class Client : public std::enable_shared_from_this<Client>{
                         std::placeholders::_1,
                         std::placeholders::_2));
     }
+    void DoSendoutData(void);
+    void StartSendoutData(void);
 public:
     Client(boost::asio::io_context& ioc,
            const char* host,
@@ -133,7 +138,9 @@ public:
            const char* user2,
            const char* user2PK,
            const char* tokenName,
-           const char* contractName);
+           const char* contractName,
+           uint64_t period,
+           uint32_t eachTime);
     virtual ~Client(void);
     void OnConnect(boost::system::error_code ec, tcp::endpoint endpoint);
     bool processNextMessage(uint32_t messageLen);
@@ -163,9 +170,11 @@ public:
     void StartHandshakeMessage();
     void DoSendTimeMessage();
     void sendHandshakeMessage(handshake_message && msg);
+    void asyncWriteData(uint8_t* buffer, std::size_t bufferSize);
     template <typename T>
     void sendMessage(T && msg) {
-        if(!_socket.is_open()) return;
+        outQueue.push_back(net_message(msg));
+        /*        if(!_socket.is_open()) return;
         auto n = net_message(msg);
         uint32_t payload_size = fc::raw::pack_size(n);
         char *header = reinterpret_cast<char *>(&payload_size);
@@ -176,19 +185,8 @@ public:
         fc::datastream<uint8_t *> ds(buffer, buffer_size);
         ds.write(header, header_size);
         fc::raw::pack(ds, n);
-        _socket.async_write_some(
-                boost::asio::buffer(buffer, buffer_size),
-                [this, buffer](boost::system::error_code ec, std::size_t w){
-                    bufferPool.deleteBuffer(buffer);
-                    if(ec) {
-                        cerr << "Error when asyn_write_some message." << endl;
-                        cerr << ec.message() << endl;
-                        _socket.close();
-                        ioc.stop();
-                        return;
-                    }
-                    //cout << "async write handshake_message successfully." << endl;
-                });
+        //coutRaw(buffer, buffer_size);
+        asyncWriteData(buffer, buffer_size);*/
     }
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
 };
