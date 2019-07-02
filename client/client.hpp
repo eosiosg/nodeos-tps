@@ -20,6 +20,8 @@
 #include <chrono>
 #include <deque>
 #include <utility>
+#include <cstdlib>
+#include <ctime>
 #include "protocol.hpp"
 #include "fake_data.hpp"
 #include "eosio.token.api.hpp"

@@ -3,7 +3,7 @@
 //
 #include "client.hpp"
 #include "outbuffer.hpp"
-#include <cstdlib>
+
 enum { BUF_SIZE = 1024 };
 
 class queued_buffer : boost::noncopyable {
@@ -116,6 +116,7 @@ timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
     testInfo.user2PK = fc::crypto::private_key(string(user2PK));
     testInfo.tokenName = string(tokenName);
     testInfo.contractName = name(string(contractName));
+    std::srand(std::time(nullptr));
     //buffer = new u_char[1024*1024*16];
 }
 
@@ -245,7 +246,7 @@ void Client::startGeneration(const string& salt) {
     testInfo.act_a_to_b.data = eosio_token_serializer.variant_to_binary("transfer",
             fc::json::from_string(
                     fc::format_string("{\"from\":\"${user1}\",\"to\":\"${user2}\","
-                                      "\"quantity\":\"1.0000 ${token}\",\"memo\":\"${l}\"}",
+                                      "\"quantity\":\"0.0001 ${token}\",\"memo\":\"${l}\"}",
                     fc::mutable_variant_object()
                     ("l", salt)
                     ("user1", testInfo.user1.to_string())
@@ -259,7 +260,7 @@ void Client::startGeneration(const string& salt) {
     testInfo.act_b_to_a.data = eosio_token_serializer.variant_to_binary("transfer",
             fc::json::from_string(
                     fc::format_string("{\"from\":\"${user2}\",\"to\":\"${user1}\","
-                                      "\"quantity\":\"1.0000 ${token}\",\"memo\":\"${l}\"}",
+                                      "\"quantity\":\"0.0001 ${token}\",\"memo\":\"${l}\"}",
                     fc::mutable_variant_object()
                     ("l", salt)
                     ("user1", testInfo.user1.to_string())
@@ -278,7 +279,7 @@ void Client::sendTransferTransaction() {
 
         block_id_type reference_block_id = testInfo.head_block_id;
         for(auto i = 0; i < testInfo.batch; i++) {
-            {
+            if(std::rand()%2 == 1) {
                 signed_transaction trx;
                 trx.actions.push_back(testInfo.act_a_to_b);
                 trx.context_free_actions.emplace_back(action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
@@ -287,8 +288,7 @@ void Client::sendTransferTransaction() {
                 trx.max_net_usage_words = 100;
                 trx.sign(testInfo.user1PK, chainid);
                 sendMessage(packed_transaction(trx));
-            }
-            {
+            } else {
                 signed_transaction trx;
                 trx.actions.push_back(testInfo.act_b_to_a);
                 trx.context_free_actions.emplace_back(action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
