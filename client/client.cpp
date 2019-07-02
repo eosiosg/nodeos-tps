@@ -163,6 +163,7 @@ bool Client::processNextMessage(uint32_t messageLen) {
         else if (msg.contains<packed_transaction>()) msgHandler(std::move(msg.get<packed_transaction>()));
         else msg.visit(msgHandler);
     } catch(const fc::exception& e) {
+        cerr << "fc::exception :" << e.what() << endl;
         return false;
     }
     return true;
@@ -307,146 +308,6 @@ void Client::sendTransferTransaction() {
     }
 }
 
-
-
-//void Client::createTestAccounts(const string& init_name, const string& init_priv_key, const string& core_symbol) {
-//    OutputGuard og(output, string("createTestAccounts"));
-//    name newaccountA("aaaaaaaaaaaa");
-//    name newaccountB("bbbbbbbbbbbb");
-//    name newaccountC("cccccccccccc");
-//    name creator(init_name);
-//
-//    auto p = fc::json::from_string(eosio_token_abi);
-//    eosio::chain::abi_def currency_abi_def = p.as<eosio::chain::abi_def>();
-//    auto & abi_serializer_max_time = testInfo.abi_serializer_max_time;
-//    eosio::chain::abi_serializer eosio_token_serializer{
-//        fc::json::from_string(eosio_token_abi).as<eosio::chain::abi_def>(),
-//        abi_serializer_max_time
-//    };
-//    //chain_id_type chainid("02ce5aa2a05e594cc3c041fc8989cf8ff4fd6efe828a23d7b3825d51b70fa2ed");
-//    fc::crypto::private_key txn_test_receiver_A_priv_key = fc::crypto::private_key::regenerate(fc::sha256(std::string(64, 'a')));
-//    fc::crypto::private_key txn_test_receiver_B_priv_key = fc::crypto::private_key::regenerate(fc::sha256(std::string(64, 'b')));
-//    fc::crypto::private_key txn_test_receiver_C_priv_key = fc::crypto::private_key::regenerate(fc::sha256(std::string(64, 'c')));
-//    fc::crypto::public_key  txn_text_receiver_A_pub_key = txn_test_receiver_A_priv_key.get_public_key();
-//    fc::crypto::public_key  txn_text_receiver_B_pub_key = txn_test_receiver_B_priv_key.get_public_key();
-//    fc::crypto::public_key  txn_text_receiver_C_pub_key = txn_test_receiver_C_priv_key.get_public_key();
-//    fc::crypto::private_key creator_priv_key = fc::crypto::private_key(init_priv_key);
-//
-//    eosio::chain::asset net{1000000, symbol(4,core_symbol.c_str())};
-//    eosio::chain::asset cpu{10000000000, symbol(4,core_symbol.c_str())};
-//    eosio::chain::asset ram{1000000, symbol(4,core_symbol.c_str())};
-//
-//    {
-//        signed_transaction trx;
-//        //create "A" account
-//        {
-//            auto owner_auth   = eosio::chain::authority{1, {{txn_text_receiver_A_pub_key, 1}}, {}};
-//            auto active_auth  = eosio::chain::authority{1, {{txn_text_receiver_A_pub_key, 1}}, {}};
-//            trx.actions.emplace_back(vector<chain::permission_level>{{creator,"active"}}, newaccount{creator, newaccountA, owner_auth, active_auth});
-//            //delegate cpu net and buyram
-//            auto act_delegatebw = create_action_delegatebw(creator, newaccountA,net,cpu,abi_serializer_max_time);
-//            auto act_buyram = create_action_buyram(creator, newaccountA, ram, abi_serializer_max_time);
-//            trx.actions.emplace_back(act_delegatebw);
-//            trx.actions.emplace_back(act_buyram);
-//        }
-//        //create "B" account
-//        {
-//            auto owner_auth   = eosio::chain::authority{1, {{txn_text_receiver_B_pub_key, 1}}, {}};
-//            auto active_auth  = eosio::chain::authority{1, {{txn_text_receiver_B_pub_key, 1}}, {}};
-//
-//            trx.actions.emplace_back(vector<chain::permission_level>{{creator,"active"}}, newaccount{creator, newaccountB, owner_auth, active_auth});
-//
-//            //delegate cpu net and buyram
-//            auto act_delegatebw = create_action_delegatebw(creator, newaccountB,net,cpu,abi_serializer_max_time);
-//            auto act_buyram = create_action_buyram(creator, newaccountB, ram, abi_serializer_max_time);
-//
-//            trx.actions.emplace_back(act_delegatebw);
-//            trx.actions.emplace_back(act_buyram);
-//        }
-//        //create "cccccccccccc" account
-//        {
-//            auto owner_auth   = eosio::chain::authority{1, {{txn_text_receiver_C_pub_key, 1}}, {}};
-//            auto active_auth  = eosio::chain::authority{1, {{txn_text_receiver_C_pub_key, 1}}, {}};
-//
-//            trx.actions.emplace_back(vector<chain::permission_level>{{creator,"active"}}, newaccount{creator, newaccountC, owner_auth, active_auth});
-//
-//            //delegate cpu net and buyram
-//            auto act_delegatebw = create_action_delegatebw(creator, newaccountC,net,cpu,abi_serializer_max_time);
-//            auto act_buyram = create_action_buyram(creator, newaccountC, ram, abi_serializer_max_time);
-//
-//            trx.actions.emplace_back(act_delegatebw);
-//            trx.actions.emplace_back(act_buyram);
-//        }
-//        //trx.expiration = testInfo.timestamp.to_time_point() + fc::seconds(30);
-//        trx.expiration = fc::time_point::now() + fc::seconds(30);
-//        trx.set_reference_block(testInfo.head_block_id);
-//        trx.sign(creator_priv_key, testInfo.chain_id);
-//        sendMessage(std::move(packed_transaction(trx)));
-//    }
-//
-//    /*//set cccccccccccc contract to eosio.token & initialize it
-//    {
-//        signed_transaction trx;
-//
-//        vector<uint8_t> wasm = wast_to_wasm(std::string(eosio_token_wast));
-//
-//        setcode handler;
-//        handler.account = newaccountC;
-//        handler.code.assign(wasm.begin(), wasm.end());
-//
-//        trx.actions.emplace_back( vector<chain::permission_level>{{newaccountC,"active"}}, handler);
-//
-//        {
-//            setabi handler;
-//            handler.account = newaccountC;
-//            handler.abi = fc::raw::pack(json::from_string(eosio_token_abi).as<abi_def>());
-//            trx.actions.emplace_back( vector<chain::permission_level>{{newaccountC,"active"}}, handler);
-//        }
-//
-//        {
-//            action act;
-//            act.account = N(cccccccccccc);
-//            act.name = N(create);
-//            act.authorization = vector<permission_level>{{newaccountC,config::active_name}};
-//            act.data = eosio_token_serializer.variant_to_binary("create", fc::json::from_string("{\"issuer\":\"cccccccccccc\",\"maximum_supply\":\"1000000000.0000 CUR\"}}"), abi_serializer_max_time);
-//            trx.actions.push_back(act);
-//        }
-//        {
-//            action act;
-//            act.account = N(cccccccccccc);
-//            act.name = N(issue);
-//            act.authorization = vector<permission_level>{{newaccountC,config::active_name}};
-//            act.data = eosio_token_serializer.variant_to_binary("issue", fc::json::from_string("{\"to\":\"cccccccccccc\",\"quantity\":\"1000000000.0000 CUR\",\"memo\":\"\"}"), abi_serializer_max_time);
-//            trx.actions.push_back(act);
-//        }
-//        {
-//            action act;
-//            act.account = N(cccccccccccc);
-//            act.name = N(transfer);
-//            act.authorization = vector<permission_level>{{newaccountC,config::active_name}};
-//            act.data = eosio_token_serializer.variant_to_binary("transfer", fc::json::from_string("{\"from\":\"cccccccccccc\",\"to\":\"aaaaaaaaaaaa\",\"quantity\":\"500000000.0000 CUR\",\"memo\":\"\"}"), abi_serializer_max_time);
-//            trx.actions.push_back(act);
-//        }
-//        {
-//            action act;
-//            act.account = N(cccccccccccc);
-//            act.name = N(transfer);
-//            act.authorization = vector<permission_level>{{newaccountC,config::active_name}};
-//            act.data = eosio_token_serializer.variant_to_binary("transfer", fc::json::from_string("{\"from\":\"cccccccccccc\",\"to\":\"bbbbbbbbbbbb\",\"quantity\":\"500000000.0000 CUR\",\"memo\":\"\"}"), abi_serializer_max_time);
-//            trx.actions.push_back(act);
-//        }
-//
-//        trx.expiration = cc.head_block_time() + fc::seconds(30);
-//        trx.set_reference_block(cc.head_block_id());
-//        trx.max_net_usage_words = 5000;
-//        trx.sign(txn_test_receiver_C_priv_key, chainid);
-//        trxs.emplace_back(std::move(trx));
-//    }*/
-//
-//
-//
-//}
-
 void Client::performanceTest(void) {
     OutputGuard og(output, string("performanceTest"));
     startGeneration("abcdefg");
@@ -455,11 +316,6 @@ void Client::performanceTest(void) {
 
 void Client::handleMessage(const notice_message& msg) {
 
-//    sync_request_message请求
-//    if(msg.known_blocks.mode == last_irr_catch_up && msg.known_trx.mode == last_irr_catch_up) {
-//        sync_request_message srm{1, 100};
-//        sendSyncRequestMessage(std::move(srm));
-//    }
     output << "notice_message ----------";
     output << msg << endl;
 
@@ -473,23 +329,23 @@ void Client::handleMessage(const notice_message& msg) {
 }
 
 void Client::handleMessage(const request_message& msg) {
-    /*output << "request_message ----------";
-    output << msg << endl;*/
+    output << "request_message ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const sync_request_message& msg) {
-    /*output << "sync_request_message ----------";
-    output << msg << endl;*/
+    output << "sync_request_message ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const signed_block_ptr& msg) {
-    /*output << "signed_block_message ----------";
+/*    output << "signed_block_message ----------";
     output << *msg << endl;*/
     testInfo.update(*msg);
 }
 
 void Client::handleMessage(const packed_transaction_ptr& msg) {
-    /*output << "packed_transaction_ptr ----------";
+/*    output << "packed_transaction_ptr ----------";
     output << *msg << endl;*/
 }
 
@@ -502,38 +358,38 @@ void Client::handleMessage(const request_p2p_message& msg) {
 }
 
 void Client::handleMessage(const pbft_prepare &msg) {
-    //output << "pbft_prepare ----------";
-    //output << msg << endl;
+/*    output << "pbft_prepare ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_commit &msg) {
-    //output << "pbft_commit ----------";
-    //output << msg << endl;
+/*    output << "pbft_commit ----------";
+    output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_view_change &msg) {
-   /* output << "pbft_view_change ----------";
-    output << msg << endl;*/
+    output << "pbft_view_change ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_new_view &msg) {
-    /*output << "pbft_new_view ----------";
-    output << msg << endl;*/
+    output << "pbft_new_view ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_checkpoint &msg) {
-    /*output << "pbft_checkpoint ----------";
+/*    output << "pbft_checkpoint ----------";
     output << msg << endl;*/
 }
 
 void Client::handleMessage(const pbft_stable_checkpoint &msg) {
-    /*output << "pbft_stable_checkpoint ----------";
-    output << msg << endl;*/
+    output << "pbft_stable_checkpoint ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const checkpoint_request_message &msg) {
-    /*output << "checkpoint_request_message ----------";
-    output << msg << endl;*/
+    output << "checkpoint_request_message ----------";
+    output << msg << endl;
 }
 
 void Client::handleMessage(const compressed_pbft_message &msg) {
@@ -584,7 +440,11 @@ void Client::StartReadMessage() {
                             //当前缓存区已经有本条完整的数据
                             if(bytesInBuffer >= totalMessageLength) {
                                 _messageBuffer.advance_read_ptr(message_header_size);
-                                if(!processNextMessage(messageLength)) return;
+                                if(!processNextMessage(messageLength)) {
+                                    _socket.close();
+                                    ioc.stop();
+                                    return;
+                                }
                             } else { //当前缓存区没有完整的数据
                                 auto outstandingMessageBytes = totalMessageLength - bytesInBuffer;
                                 auto availableBufferBytes = _messageBuffer.bytes_to_write();
@@ -613,25 +473,23 @@ void Client::StartSendTimeMessage() {
 }
 
 void Client::DoSendoutData(void) {
+    static uint64_t sendCount = 0;
+    sendCount++;
     try {
 
         if (!_socket.is_open()) return;
         if (outQueue.empty()) {
-            //队列为空1ms之后再次唤醒
-            timerOutQueue.expires_after(std::chrono::microseconds(1000));
+            //队列为空2.5ms之后再次唤醒
+            timerOutQueue.expires_after(std::chrono::microseconds(2500));
             timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
             return;
         }
-
-        const auto& netMsg = outQueue.front();
-        int32_t payload_size = fc::raw::pack_size(netMsg);
-        char* header = reinterpret_cast<char*>(&payload_size);
-        size_t header_size = sizeof(payload_size);
-        size_t bufferSize = header_size+payload_size;
-        uint8_t* buffer = bufferPool.newBuffer(bufferSize);
-        fc::datastream<uint8_t*> ds(buffer, bufferSize);
-        ds.write(header, header_size);
-        fc::raw::pack(ds, netMsg);
+        if (sendCount%2000 == 0) {
+            output << "QueueLen:" << outQueue.size() << endl;
+        }
+        auto& buff = outQueue.front();
+        auto buffer = buff.pbuffer;
+        auto bufferSize = buff.size;
         auto complete_handler = [bufferSize](boost::system::error_code ec,
                 std::size_t bytes_transferred) -> std::size_t {
             return (ec || bufferSize<=bytes_transferred) ? 0 : (bufferSize-bytes_transferred);
@@ -641,18 +499,20 @@ void Client::DoSendoutData(void) {
                 _socket,
                 boost::asio::buffer(buffer, bufferSize),
                 complete_handler,
-                [this, buffer, bufferSize](boost::system::error_code ec, std::size_t w) {
-                    this->bufferPool.deleteBuffer(buffer);
+                [this](boost::system::error_code ec, std::size_t w) {
+                    auto& buff = this->outQueue.front();
+                    auto bufferSize = buff.size;
+                    this->bufferPool.deleteBuffer(buff.pbuffer);
                     this->outQueue.pop_front();
 
-                    if (w!=bufferSize)
+                    if (w!=buff.size)
                         cerr << "w != bufferSize:" << "w(" << w << "), (" << bufferSize << ")" << endl;
                     if (ec) {
                         cerr << "Error when asyn_write buffer." << endl;
                         cerr << ec.message() << endl;
                     }
 
-                    if (ec || w!=bufferSize) {
+                    if (ec || w!=buff.size) {
                         _socket.close();
                         ioc.stop();
                         return;
@@ -669,55 +529,6 @@ void Client::DoSendoutData(void) {
 
 void Client::StartSendoutData(void) {
     DoSendoutData();
-}
-
-void Client::asyncWriteData(uint8_t* buffer, std::size_t bufferSize) {
-    if(bufferSize == 0) return;
-    if(!_socket.is_open()) return;
-    auto complete_handler = [bufferSize](boost::system::error_code ec, std::size_t bytes_transferred) -> std::size_t{
-        if(ec||bufferSize <= bytes_transferred) {
-            return 0;
-        }
-        return bufferSize - bytes_transferred;
-    };
-    boost::asio::async_write(
-            _socket,
-            boost::asio::buffer(buffer, bufferSize),
-            complete_handler,
-            [this, buffer, bufferSize](boost::system::error_code ec, std::size_t w){
-                bufferPool.deleteBuffer(buffer);
-                if(w != bufferSize) {
-                    cerr << "w != bufferSize:" << "w(" << w << "), (" << bufferSize << ")" << endl;
-                    _socket.close();
-                    ioc.stop();
-                    return;
-                }
-                if(ec) {
-                    cerr << "Error when asyn_write buffer." << endl;
-                    cerr << ec.message() << endl;
-                    _socket.close();
-                    ioc.stop();
-                    return;
-                }
-            });
-    /*_socket.async_write_some(
-            boost::asio::buffer(buffer, bufferSize),
-            [this, buffer, bufferSize, delPointer](boost::system::error_code ec, std::size_t w){
-                if(ec||(w > bufferSize)) {
-                    if(delPointer) bufferPool.deleteBuffer(buffer);
-                    cerr << "Error when asyn_write_some." << endl;
-                    cerr << ec.message() << endl;
-                    _socket.close();
-                    ioc.stop();
-                    return;
-                }
-                if(w < bufferSize) {
-                    cerr << "w != buffer_size," << "w = " << w << ", buffer_size = " << bufferSize << endl;
-                    asyncWriteData(buffer + w, bufferSize - w, false);
-                }
-                if(delPointer) bufferPool.deleteBuffer(buffer);
-                //output << "async write successfully." << endl;
-            });*/
 }
 
 void Client::DoSendTimeMessage() {

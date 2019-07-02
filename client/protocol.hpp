@@ -442,40 +442,21 @@ namespace eosio {
         bool operator!=(const block_info_type &rhs) const {
             return !(*this == rhs);
         }
+        bool empty() const {
+            return block_id == block_id_type();
+        }
     };
 
 
     struct pbft_message_common {
         friend std::ostream& operator<<(std::ostream& out, const pbft_message_common& msg) {
-            std::string sender(msg.sender);
             out << "type: " << pbft_message_type_str(msg.type)
-                << "uuid: " << msg.uuid
-                << "sender: " << sender
-                << "chain_id: " << msg.chain_id.str()
                 << "timestamp: " << msg.timestamp.sec_since_epoch();
             return out;
         }
-
         pbft_message_type   type;
         explicit pbft_message_common(pbft_message_type t): type{t} {};
-
-        std::string              uuid;
-        public_key_type     sender;
-        chain_id_type       chain_id = chain_id_type("");
         fc::time_point          timestamp = fc::time_point::now();
-
-        bool operator==(const pbft_message_common &rhs) const {
-            return type == rhs.type
-                   && chain_id == rhs.chain_id
-                   && sender == rhs.sender;
-        }
-
-        bool empty() const {
-            return uuid.empty()
-                   && sender == public_key_type()
-                   && chain_id == chain_id_type("");
-        }
-
         ~pbft_message_common() = default;
     };
 
@@ -486,11 +467,7 @@ namespace eosio {
         pbft_view_type      view = 0;
         block_info_type     block_info;
         signature_type      sender_signature;
-        bool operator==(const pbft_prepare &rhs) const {
-            return common == rhs.common
-                   && view == rhs.view
-                   && block_info == rhs.block_info;
-        }
+
         bool operator<(const pbft_prepare &rhs) const {
             if (block_info.block_num() < rhs.block_info.block_num()) {
                 return true;
@@ -500,21 +477,22 @@ namespace eosio {
                 return false;
             }
         }
-        digest_type digest() const {
+
+        bool empty() const {
+            return !view
+                    && block_info.empty()
+                    && sender_signature == signature_type();
+        }
+
+        digest_type digest(chain_id_type chain_id) const {
             digest_type::encoder enc;
+            fc::raw::pack(enc, chain_id);
             fc::raw::pack(enc, common);
             fc::raw::pack(enc, view);
             fc::raw::pack(enc, block_info);
             return enc.result();
         }
-        bool is_signature_valid() const {
-            try {
-                auto pk = fc::crypto::public_key(sender_signature, digest(), true);
-                return common.sender == pk;
-            } catch (fc::exception & /*e*/) {
-                return false;
-            }
-        }
+
         friend std::ostream& operator<<(std::ostream& output, const pbft_prepare& msg) {
             std::string sig(msg.sender_signature);
             output << "common: " << msg.common
@@ -527,15 +505,12 @@ namespace eosio {
 
     struct pbft_commit {
         explicit pbft_commit() = default;
+
         pbft_message_common common = pbft_message_common(pbft_message_type::commit);
         pbft_view_type      view = 0;
         block_info_type     block_info;
         signature_type      sender_signature;
-        bool operator==(const pbft_commit &rhs) const {
-            return common == rhs.common
-                   && view == rhs.view
-                   && block_info == rhs.block_info;
-        }
+
         bool operator<(const pbft_commit &rhs) const {
             if (block_info.block_num() < rhs.block_info.block_num()) {
                 return true;
@@ -545,20 +520,20 @@ namespace eosio {
                 return false;
             }
         }
-        digest_type digest() const {
+
+        bool empty() const {
+            return !view
+                    && block_info.empty()
+                    && sender_signature == signature_type();
+        }
+
+        digest_type digest(chain_id_type chain_id) const {
             digest_type::encoder enc;
+            fc::raw::pack(enc, chain_id);
             fc::raw::pack(enc, common);
             fc::raw::pack(enc, view);
             fc::raw::pack(enc, block_info);
             return enc.result();
-        }
-        bool is_signature_valid() const {
-            try {
-                auto pk = fc::crypto::public_key(sender_signature, digest(), true);
-                return common.sender == pk;
-            } catch (fc::exception & /*e*/) {
-                return false;
-            }
         }
         friend std::ostream& operator<<(std::ostream& out, const pbft_commit& msg) {
             std::string sig(msg.sender_signature);
@@ -572,12 +547,15 @@ namespace eosio {
 
     struct pbft_prepared_certificate {
         explicit pbft_prepared_certificate() = default;
+
         block_info_type      block_info;
         std::set<block_id_type>   pre_prepares;
         std::vector<pbft_prepare> prepares;
+
         bool operator<(const pbft_prepared_certificate &rhs) const {
             return block_info.block_num() < rhs.block_info.block_num();
         }
+
         bool empty() const {
             return block_info == block_info_type()
                    && prepares.empty();
@@ -627,35 +605,16 @@ namespace eosio {
         block_info_type     block_info;
         signature_type      sender_signature;
 
-        bool operator==(const pbft_checkpoint &rhs) const {
-            return common == rhs.common
-                   && block_info == rhs.block_info;
-        }
-
-        bool operator!=(const pbft_checkpoint &rhs) const {
-            return !(*this == rhs);
-        }
-
         bool operator<(const pbft_checkpoint &rhs) const {
             return block_info.block_num() < rhs.block_info.block_num();
         }
-
-        digest_type digest() const {
+        digest_type digest(chain_id_type chain_id) const {
             digest_type::encoder enc;
+            fc::raw::pack(enc, chain_id);
             fc::raw::pack(enc, common);
             fc::raw::pack(enc, block_info);
             return enc.result();
         }
-
-        bool is_signature_valid() const {
-            try {
-                auto pk = fc::crypto::public_key(sender_signature, digest(), true);
-                return common.sender == pk;
-            } catch (fc::exception & /*e*/) {
-                return false;
-            }
-        }
-
         friend std::ostream& operator<<(std::ostream& out, const pbft_checkpoint& msg) {
             out << "common: " << msg.common
                 << ", block_num: " << msg.block_info.block_num()
@@ -696,7 +655,7 @@ namespace eosio {
         pbft_view_type                      current_view = 0;
         pbft_view_type                      target_view = 1;
         pbft_prepared_certificate           prepared_cert;
-        std::vector<pbft_committed_certificate>  committed_cert;
+        std::vector<pbft_committed_certificate>  committed_certs;
         pbft_stable_checkpoint              stable_checkpoint;
         signature_type                      sender_signature;
 
@@ -720,28 +679,18 @@ namespace eosio {
             fc::raw::pack(enc, current_view);
             fc::raw::pack(enc, target_view);
             fc::raw::pack(enc, prepared_cert);
-            fc::raw::pack(enc, committed_cert);
+            fc::raw::pack(enc, committed_certs);
             fc::raw::pack(enc, stable_checkpoint);
             return enc.result();
         }
 
-        bool is_signature_valid() const {
-            try {
-                auto pk = fc::crypto::public_key(sender_signature, digest(), true);
-                return common.sender == pk;
-            } catch (fc::exception & /*e*/) {
-                return false;
-            }
-        }
-
         bool empty() const {
-            return common.empty()
-                   && current_view == 0
-                   && target_view == 0
-                   && prepared_cert.empty()
-                   && committed_cert.empty()
-                   && stable_checkpoint.empty()
-                   && sender_signature == signature_type();
+            return !current_view
+                    && target_view == 1
+                    && prepared_cert.empty()
+                    && committed_certs.empty()
+                    && stable_checkpoint.empty()
+                    && sender_signature == signature_type();
         }
     };
 
@@ -771,7 +720,7 @@ namespace eosio {
         pbft_message_common                 common = pbft_message_common(pbft_message_type::new_view);
         pbft_view_type                      new_view = 0;
         pbft_prepared_certificate           prepared_cert;
-        std::vector<pbft_committed_certificate>  committed_cert;
+        std::vector<pbft_committed_certificate>  committed_certs;
         pbft_stable_checkpoint              stable_checkpoint;
         pbft_view_changed_certificate       view_changed_cert;
         signature_type                      sender_signature;
@@ -785,36 +734,26 @@ namespace eosio {
             fc::raw::pack(enc, common);
             fc::raw::pack(enc, new_view);
             fc::raw::pack(enc, prepared_cert);
-            fc::raw::pack(enc, committed_cert);
+            fc::raw::pack(enc, committed_certs);
             fc::raw::pack(enc, stable_checkpoint);
             fc::raw::pack(enc, view_changed_cert);
             return enc.result();
         }
 
-        bool is_signature_valid() const {
-            try {
-                auto pk = fc::crypto::public_key(sender_signature, digest(), true);
-                return common.sender == pk;
-            } catch (fc::exception & /*e*/) {
-                return false;
-            }
-        }
-
         bool empty() const {
-            return common.empty()
-                   && new_view == 0
-                   && prepared_cert.empty()
-                   && committed_cert.empty()
-                   && stable_checkpoint.empty()
-                   && view_changed_cert.empty()
-                   && sender_signature == signature_type();
+            return new_view == 0
+                    && prepared_cert.empty()
+                    && committed_certs.empty()
+                    && stable_checkpoint.empty()
+                    && view_changed_cert.empty()
+                    && sender_signature == signature_type();
         }
 
         friend std::ostream& operator<<(std::ostream& out, const pbft_new_view& msg) {
             out << "common: " << msg.common
                 << ", new_view: " << msg.prepared_cert
                 << ", committed_cert: ";
-            for(const auto& x: msg.committed_cert) {
+            for(const auto& x: msg.committed_certs) {
                 out << x << ", ";
             }
             out << ", stable_checkpoint: " << msg.stable_checkpoint
@@ -912,21 +851,26 @@ FC_REFLECT_DERIVED(eosio::signed_block, (eosio::signed_block_header), (transacti
 FC_REFLECT( eosio::request_p2p_message, (discoverable) )
 FC_REFLECT( eosio::response_p2p_message, (discoverable)(p2p_peer_list) )
 FC_REFLECT( eosio::select_ids<fc::sha256>, (mode)(pending)(ids) )
+
 FC_REFLECT(eosio::block_info_type, (block_id))
 FC_REFLECT_ENUM(eosio::pbft_message_type, (prepare)(commit)(checkpoint)(view_change)(new_view))
-FC_REFLECT(eosio::pbft_message_common, (type)(uuid)(sender)(chain_id)(timestamp))
+FC_REFLECT(eosio::pbft_message_common, (type)(timestamp))
+
 FC_REFLECT(eosio::pbft_prepare, (common)(view)(block_info)(sender_signature))
 FC_REFLECT(eosio::pbft_commit, (common)(view)(block_info)(sender_signature))
 FC_REFLECT(eosio::pbft_checkpoint,(common)(block_info)(sender_signature))
-FC_REFLECT(eosio::pbft_view_change, (common)(current_view)(target_view)(prepared_cert)(committed_cert)(stable_checkpoint)(sender_signature))
-FC_REFLECT(eosio::pbft_new_view, (common)(new_view)(prepared_cert)(committed_cert)(stable_checkpoint)(view_changed_cert)(sender_signature))
+FC_REFLECT(eosio::pbft_view_change, (common)(current_view)(target_view)(prepared_cert)(committed_certs)(stable_checkpoint)(sender_signature))
+FC_REFLECT(eosio::pbft_new_view, (common)(new_view)(prepared_cert)(committed_certs)(stable_checkpoint)(view_changed_cert)(sender_signature))
+
 FC_REFLECT(eosio::pbft_prepared_certificate, (block_info)(pre_prepares)(prepares))
 FC_REFLECT(eosio::pbft_committed_certificate,(block_info)(commits))
 FC_REFLECT(eosio::pbft_view_changed_certificate, (target_view)(view_changes))
 FC_REFLECT(eosio::pbft_stable_checkpoint, (block_info)(checkpoints))
+
 FC_REFLECT(eosio::pbft_state, (block_id)(block_num)(prepares)(is_prepared)(commits)(is_committed))
 FC_REFLECT(eosio::pbft_view_change_state, (view)(view_changes)(is_view_changed))
 FC_REFLECT(eosio::pbft_checkpoint_state, (block_id)(block_num)(checkpoints)(is_stable))
+
 FC_REFLECT( eosio::checkpoint_request_message, (start_block)(end_block) )
 FC_REFLECT( eosio::compressed_pbft_message, (content))
 

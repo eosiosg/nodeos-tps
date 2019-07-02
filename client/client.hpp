@@ -100,6 +100,13 @@ public:
     }
 };
 
+struct Buffer {
+    uint8_t *pbuffer;
+    std::size_t size;
+    Buffer() = delete;
+    Buffer(uint8_t* p, std::size_t s):pbuffer(p), size(s) { }
+};
+
 
 class Client : public std::enable_shared_from_this<Client>{
     TestInfo testInfo;
@@ -114,7 +121,7 @@ class Client : public std::enable_shared_from_this<Client>{
     ostream &output = cout;
     string host;
     string port;
-    std::list<net_message> outQueue;
+    std::list<Buffer> outQueue;
     boost::asio::io_context& ioc;
     void makePeerSync(void);
     void performanceTest(void);
@@ -170,23 +177,28 @@ public:
     void StartHandshakeMessage();
     void DoSendTimeMessage();
     void sendHandshakeMessage(handshake_message && msg);
-    void asyncWriteData(uint8_t* buffer, std::size_t bufferSize);
     template <typename T>
     void sendMessage(T && msg) {
-        outQueue.push_back(net_message(msg));
-        /*        if(!_socket.is_open()) return;
-        auto n = net_message(msg);
-        uint32_t payload_size = fc::raw::pack_size(n);
-        char *header = reinterpret_cast<char *>(&payload_size);
+        net_message netMsg(msg);
+        int32_t payload_size = fc::raw::pack_size(netMsg);
+        char* header = reinterpret_cast<char*>(&payload_size);
         size_t header_size = sizeof(payload_size);
-        size_t buffer_size = header_size + payload_size;
-        //cout << "buffer size:" << buffer_size << endl;
-        uint8_t * buffer = bufferPool.newBuffer(buffer_size);
-        fc::datastream<uint8_t *> ds(buffer, buffer_size);
+        size_t bufferSize = header_size + payload_size;
+        uint8_t* buffer = bufferPool.newBuffer(bufferSize);
+        fc::datastream<uint8_t*> ds(buffer, bufferSize);
         ds.write(header, header_size);
-        fc::raw::pack(ds, n);
-        //coutRaw(buffer, buffer_size);
-        asyncWriteData(buffer, buffer_size);*/
+        fc::raw::pack(ds, netMsg);
+        if(outQueue.size() >= 100000) {
+            cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 100000" << endl;
+        }
+        if(outQueue.size() >= 500000) {
+            //防御，防止内存沾满
+            cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 500000" << endl;
+            _socket.close();
+            ioc.stop();
+            return;
+        }
+        outQueue.push_back(Buffer(buffer, bufferSize));
     }
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
 };
