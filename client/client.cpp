@@ -583,7 +583,7 @@ int main(int argc, char* argv[]) {
     uint64_t period = static_cast<uint64_t>(atol(argv[10]));
     uint32_t eachTime = static_cast<uint32_t>(atoi(argv[11]));
 
-    //while(true) {
+    while(true) {
         boost::asio::io_service ioc;
         Client client(
                 ioc, host, port, chain_id,
@@ -591,5 +591,5 @@ int main(int argc, char* argv[]) {
                 tokenName, contractName, period, eachTime);
         ioc.run();
         cout << "Reconnect." << endl;
-    //}
+    }
 }
