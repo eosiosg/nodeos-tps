@@ -102,11 +102,34 @@ public:
     }
 };
 
-struct Buffer {
-    uint8_t *pbuffer;
-    std::size_t size;
-    Buffer() = delete;
-    Buffer(uint8_t* p, std::size_t s):pbuffer(p), size(s) { }
+struct OutQueue {
+    std::list<Buffer> _q;
+    uint8_t *pTemp= nullptr;
+    std::size_t wIndex = 0;
+    static constexpr std::size_t allocSize = 1024*32;
+    AsyncBufferPool& pool;
+    OutQueue() = delete;
+    OutQueue(AsyncBufferPool& pool):pool(pool) {
+        pTemp = pool.newBuffer(allocSize);
+    }
+    ~OutQueue() {
+        pool.deleteBuffer(pTemp);
+    }
+    std::size_t size() {
+        return _q.size();
+    }
+    Buffer& front() {
+        return _q.front();
+    }
+    void push_back(const Buffer& b) {
+        _q.push_back(b);
+    }
+    bool empty(void) {
+        return _q.empty();
+    }
+    void pop_front(void) {
+        _q.pop_front();
+    }
 };
 
 
@@ -123,7 +146,7 @@ class Client : public std::enable_shared_from_this<Client>{
     ostream &output = cout;
     string host;
     string port;
-    std::list<Buffer> outQueue;
+    OutQueue outQueue{bufferPool};
     boost::asio::io_context& ioc;
     void makePeerSync(void);
     void performanceTest(void);
@@ -179,17 +202,7 @@ public:
     void StartHandshakeMessage();
     void DoSendTimeMessage();
     void sendHandshakeMessage(handshake_message && msg);
-    template <typename T>
-    void sendMessage(T && msg) {
-        net_message netMsg(msg);
-        int32_t payload_size = fc::raw::pack_size(netMsg);
-        char* header = reinterpret_cast<char*>(&payload_size);
-        size_t header_size = sizeof(payload_size);
-        size_t bufferSize = header_size + payload_size;
-        uint8_t* buffer = bufferPool.newBuffer(bufferSize);
-        fc::datastream<uint8_t*> ds(buffer, bufferSize);
-        ds.write(header, header_size);
-        fc::raw::pack(ds, netMsg);
+    void sendMessage(packed_transaction&& msg) {
         if(outQueue.size() >= 100000) {
             cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 100000" << endl;
         }
@@ -200,7 +213,45 @@ public:
             ioc.stop();
             return;
         }
-        outQueue.push_back(Buffer(buffer, bufferSize));
+
+        net_message netMsg(msg);
+        int32_t payload_size = fc::raw::pack_size(netMsg);
+        char* header = reinterpret_cast<char*>(&payload_size);
+        size_t header_size = sizeof(payload_size);
+        size_t messageLen = header_size + payload_size;
+        if(messageLen > outQueue.allocSize - outQueue.wIndex) {
+            outQueue.push_back(Buffer(outQueue.pTemp, outQueue.wIndex));
+            outQueue.pTemp = bufferPool.newBuffer(outQueue.allocSize);
+            outQueue.wIndex = 0;
+        }
+
+        fc::datastream<uint8_t*> ds(outQueue.pTemp + outQueue.wIndex, messageLen);
+        ds.write(header, header_size);
+        fc::raw::pack(ds, netMsg);
+        outQueue.wIndex += messageLen;
+    }
+    template <typename T>
+    void sendMessage(T && msg) {
+        if(outQueue.size() >= 100000) {
+            cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 100000" << endl;
+        }
+        if(outQueue.size() >= 500000) {
+            //防御，防止内存沾满
+            cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 500000" << endl;
+            _socket.close();
+            ioc.stop();
+            return;
+        }
+        net_message netMsg(msg);
+        int32_t payload_size = fc::raw::pack_size(netMsg);
+        char* header = reinterpret_cast<char*>(&payload_size);
+        size_t header_size = sizeof(payload_size);
+        size_t messageLen = header_size + payload_size;
+        uint8_t* buffer = bufferPool.newBuffer(messageLen);
+        fc::datastream<uint8_t*> ds(buffer, messageLen);
+        ds.write(header, header_size);
+        fc::raw::pack(ds, netMsg);
+        outQueue.push_back(Buffer(buffer, messageLen));
     }
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
 };

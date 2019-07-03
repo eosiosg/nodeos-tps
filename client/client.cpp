@@ -398,8 +398,9 @@ void Client::handleMessage(const compressed_pbft_message &msg) {
 
 
 void Client::StartReadMessage() {
-    if(!_socket.is_open())
+    if(!_socket.is_open()) {
         return;
+    }
     std::size_t minimum_read = _outStandingReadBytes ? *_outStandingReadBytes:message_header_size;
     auto completion_handler = [minimum_read](boost::system::error_code ec, std::size_t bytes_transferred) -> std::size_t {
         if(ec||bytes_transferred >= minimum_read) {
@@ -477,10 +478,12 @@ void Client::DoSendoutData(void) {
     sendCount++;
     try {
 
-        if (!_socket.is_open()) return;
+        if (!_socket.is_open()) {
+            cerr << "!_socket.is_open().:" <<__func__ << endl;
+            return;
+        }
         if (outQueue.empty()) {
-            //队列为空2.5ms之后再次唤醒
-            timerOutQueue.expires_after(std::chrono::microseconds(2500));
+            timerOutQueue.expires_after(std::chrono::microseconds(0));
             timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
             return;
         }
@@ -532,8 +535,11 @@ void Client::StartSendoutData(void) {
 }
 
 void Client::DoSendTimeMessage() {
-    if(!_socket.is_open())
+    if(!_socket.is_open()){
+        cerr << "check socket not open in " <<__func__<< endl;
+        ioc.stop();
         return;
+    }
     auto time = std::chrono::system_clock::now().time_since_epoch().count();
     time_message msg;
     msg.rec = time;

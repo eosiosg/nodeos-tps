@@ -524,4 +524,8 @@ namespace eosio { namespace chain {
                 3240000, "Snapshot exception" )
         FC_DECLARE_DERIVED_EXCEPTION( snapshot_validation_exception,   snapshot_exception,
                 3240001, "Snapshot Validation Exception" )
+        FC_DECLARE_DERIVED_EXCEPTION( new_buffer_exception, chain_exception,
+                9999999, "new_buffer_exception" )
+        FC_DECLARE_DERIVED_EXCEPTION( delete_buffer_exception, chain_exception,
+                9999998, "delete_buffer_exception" )
     } } // eosio::chain
