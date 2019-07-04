@@ -106,7 +106,7 @@ struct OutQueue {
     std::list<Buffer> _q;
     uint8_t *pTemp= nullptr;
     std::size_t wIndex = 0;
-    static constexpr std::size_t allocSize = 1024*32;
+    static constexpr std::size_t allocSize = 1024;
     AsyncBufferPool& pool;
     OutQueue() = delete;
     OutQueue(AsyncBufferPool& pool):pool(pool) {
@@ -202,46 +202,13 @@ public:
     void StartHandshakeMessage();
     void DoSendTimeMessage();
     void sendHandshakeMessage(handshake_message && msg);
-    void sendMessage(packed_transaction&& msg) {
-        if(outQueue.size() >= 100000) {
-            cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 100000" << endl;
-        }
-        if(outQueue.size() >= 500000) {
-            //防御，防止内存沾满
-            cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 500000" << endl;
-            _socket.close();
-            ioc.stop();
-            return;
-        }
+    void sendMessage(packed_transaction&& msg);
 
-        net_message netMsg(msg);
-        int32_t payload_size = fc::raw::pack_size(netMsg);
-        char* header = reinterpret_cast<char*>(&payload_size);
-        size_t header_size = sizeof(payload_size);
-        size_t messageLen = header_size + payload_size;
-        if(messageLen > outQueue.allocSize - outQueue.wIndex) {
-            outQueue.push_back(Buffer(outQueue.pTemp, outQueue.wIndex));
-            outQueue.pTemp = bufferPool.newBuffer(outQueue.allocSize);
-            outQueue.wIndex = 0;
-        }
+    void checkQueueStatus(void);
 
-        fc::datastream<uint8_t*> ds(outQueue.pTemp + outQueue.wIndex, messageLen);
-        ds.write(header, header_size);
-        fc::raw::pack(ds, netMsg);
-        outQueue.wIndex += messageLen;
-    }
     template <typename T>
     void sendMessage(T && msg) {
-        if(outQueue.size() >= 100000) {
-            cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 100000" << endl;
-        }
-        if(outQueue.size() >= 500000) {
-            //防御，防止内存沾满
-            cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 500000" << endl;
-            _socket.close();
-            ioc.stop();
-            return;
-        }
+        checkQueueStatus();
         net_message netMsg(msg);
         int32_t payload_size = fc::raw::pack_size(netMsg);
         char* header = reinterpret_cast<char*>(&payload_size);
@@ -253,6 +220,7 @@ public:
         fc::raw::pack(ds, netMsg);
         outQueue.push_back(Buffer(buffer, messageLen));
     }
+
     void OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints);
 };
 

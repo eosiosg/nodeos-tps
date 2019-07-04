@@ -23,7 +23,7 @@ struct Buffer {
 class AsyncBufferPool {
     fc::time_point start;
     fc::time_point end;
-    static constexpr std::size_t allocSize = 1024*32;
+    static constexpr std::size_t allocSize = 1024;
     std::list<Buffer> empty;
     std::map<uint8_t*, std::size_t> full;
 public:
@@ -58,7 +58,7 @@ public:
             }
         } else EOS_THROW(eosio::chain::new_buffer_exception, "newBuffer len > allocSize");
         end = fc::time_point::now();
-        cout << "NewBufferTimeCost:" << (end-start).count() << endl;
+        //cout << "NewBufferTimeCost:" << (end-start).count() << endl;
         return ret;
     }
 
@@ -71,6 +71,6 @@ public:
             empty.emplace_back(Buffer(buffer, size));
         } else EOS_THROW(eosio::chain::delete_buffer_exception, "Can not find pointer in pool.");
         end = fc::time_point::now();
-        cout << "DeleteBufferTimeCost:" << (end-start).count() << endl;
+        //cout << "DeleteBufferTimeCost:" << (end-start).count() << endl;
     }
 };

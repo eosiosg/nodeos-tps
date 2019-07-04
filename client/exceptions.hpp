@@ -528,4 +528,7 @@ namespace eosio { namespace chain {
                 9999999, "new_buffer_exception" )
         FC_DECLARE_DERIVED_EXCEPTION( delete_buffer_exception, chain_exception,
                 9999998, "delete_buffer_exception" )
+        FC_DECLARE_DERIVED_EXCEPTION( queue_over_max_size_exception, chain_exception,
+                9999997, "queue_over_max_size_exception" )
+
     } } // eosio::chain

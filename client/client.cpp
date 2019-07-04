@@ -233,6 +233,38 @@ eosio::chain::action create_action_buyram(const name &from, const name &to, cons
     return act_buyram;
 }
 
+void Client::checkQueueStatus(void) {
+    if(outQueue.size() >= 400) {
+        cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 400" << endl;
+    }
+    if(outQueue.size() >= 800) {
+        //防御，防止内存沾满
+        cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 800" << endl;
+        _socket.close();
+        ioc.stop();
+        EOS_THROW(eosio::chain::queue_over_max_size_exception, "queue_over_max_size_exception.");
+    }
+}
+
+
+void Client::sendMessage(packed_transaction&& msg) {
+    checkQueueStatus();
+    net_message netMsg(msg);
+    int32_t payload_size = fc::raw::pack_size(netMsg);
+    char* header = reinterpret_cast<char*>(&payload_size);
+    size_t header_size = sizeof(payload_size);
+    size_t messageLen = header_size + payload_size;
+    if(messageLen > outQueue.allocSize - outQueue.wIndex) {
+        outQueue.push_back(Buffer(outQueue.pTemp, outQueue.wIndex));
+        outQueue.pTemp = bufferPool.newBuffer(outQueue.allocSize);
+        outQueue.wIndex = 0;
+    }
+
+    fc::datastream<uint8_t*> ds(outQueue.pTemp + outQueue.wIndex, messageLen);
+    ds.write(header, header_size);
+    fc::raw::pack(ds, netMsg);
+    outQueue.wIndex += messageLen;
+}
 
 void Client::startGeneration(const string& salt) {
     abi_serializer eosio_token_serializer{
@@ -274,37 +306,41 @@ void Client::startGeneration(const string& salt) {
 void Client::sendTransferTransaction() {
     //OutputGuard og(output, string("sendTransferTransaction"));
     try {
+        testInfo.timerSendTransferTransaction.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
+        testInfo.timerSendTransferTransaction.async_wait(std::bind(&Client::sendTransferTransaction, this));
         auto chainid = testInfo.chain_id;
         static uint64_t nonce = static_cast<uint64_t>(fc::time_point::now().sec_since_epoch()) << 32;
-
         block_id_type reference_block_id = testInfo.head_block_id;
-        for(auto i = 0; i < testInfo.batch; i++) {
-            if(std::rand()%2 == 1) {
+        for (auto i = 0; i<testInfo.batch; i++) {
+            if (std::rand()%2==1) {
                 signed_transaction trx;
                 trx.actions.push_back(testInfo.act_a_to_b);
-                trx.context_free_actions.emplace_back(action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
+                trx.context_free_actions.emplace_back(
+                        action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
                 trx.set_reference_block(reference_block_id);
-                trx.expiration = fc::time_point::now() + fc::seconds(30);
+                trx.expiration = fc::time_point::now()+fc::seconds(30);
                 trx.max_net_usage_words = 100;
                 trx.sign(testInfo.user1PK, chainid);
                 sendMessage(packed_transaction(trx));
-            } else {
+            }
+            else {
                 signed_transaction trx;
                 trx.actions.push_back(testInfo.act_b_to_a);
-                trx.context_free_actions.emplace_back(action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
+                trx.context_free_actions.emplace_back(
+                        action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
                 trx.set_reference_block(reference_block_id);
-                trx.expiration = fc::time_point::now() + fc::seconds(30);
+                trx.expiration = fc::time_point::now()+fc::seconds(30);
                 trx.max_net_usage_words = 100;
                 trx.sign(testInfo.user2PK, chainid);
                 sendMessage(packed_transaction(trx));
             }
         }
-        testInfo.timerSendTransferTransaction.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
-        testInfo.timerSendTransferTransaction.async_wait(std::bind(&Client::sendTransferTransaction, this));
-    } catch ( const fc::exception& e ) {
-        output << "fc::exception :" << e.what() << endl;
-    } catch (const std::exception& e2) {
-        output << "std::exception:" << e2.what() << endl;
+    }catch (fc::exception e) {
+        cerr << "fc::exception: " << e.what() << endl;
+        testInfo.timerSendTransferTransaction.cancel();
+    }catch (std::exception e) {
+        cerr << "std::exception: " << e.what() << endl;
+        testInfo.timerSendTransferTransaction.cancel();
     }
 }
 
@@ -320,11 +356,11 @@ void Client::handleMessage(const notice_message& msg) {
     output << msg << endl;
 
     // 让对端认为数据已经同步(将sync->true)
-    timerMakePeerSync.expires_after(std::chrono::seconds(5));
+    timerMakePeerSync.expires_after(std::chrono::milliseconds(500));
     timerMakePeerSync.async_wait(std::bind(&Client::makePeerSync, this));
 
     // 开始性能测试
-    testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(10));
+    testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(1));
     testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
 }
 
@@ -477,19 +513,17 @@ void Client::DoSendoutData(void) {
     static uint64_t sendCount = 0;
     sendCount++;
     try {
-
         if (!_socket.is_open()) {
             cerr << "!_socket.is_open().:" <<__func__ << endl;
             return;
         }
+
         if (outQueue.empty()) {
-            timerOutQueue.expires_after(std::chrono::microseconds(0));
+            timerOutQueue.expires_after(std::chrono::microseconds(20));
             timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
             return;
         }
-        if (sendCount%2000 == 0) {
-            output << "QueueLen:" << outQueue.size() << endl;
-        }
+        if (sendCount%2000 == 0) output << "QueueLen:" << outQueue.size() << endl;
         auto& buff = outQueue.front();
         auto buffer = buff.pbuffer;
         auto bufferSize = buff.size;
