@@ -201,38 +201,6 @@ void Client::makePeerSync(void) {
     output << "send request message successfully." << endl;
 }
 
-eosio::chain::action create_action_delegatebw(const name &from, const name &to, const asset &net, const asset &cpu, const fc::microseconds &abi_serializer_max_time){
-    fc::variant variant_delegate = fc::mutable_variant_object()
-            ("from", from.to_string())
-            ("receiver", to.to_string())
-            ("stake_net_quantity", net.to_string())
-            ("stake_cpu_quantity", cpu.to_string())
-            ("transfer", true);
-    auto first = fc::json::from_string(eosio_system_abi).as<abi_def>();
-    abi_serializer eosio_system_serializer{first, abi_serializer_max_time};
-
-    auto payload_delegate = eosio_system_serializer.variant_to_binary( "delegatebw", variant_delegate, abi_serializer_max_time);
-    eosio::chain::action act_delegate{vector<chain::permission_level>{{from,"active"}},
-                                      config::system_account_name, eosio::chain::string_to_name("delegatebw"), payload_delegate};
-    return act_delegate;
-}
-
-eosio::chain::action create_action_buyram(const name &from, const name &to, const asset &quant, const fc::microseconds &abi_serializer_max_time){
-    fc::variant variant_buyram = fc::mutable_variant_object()
-            ("payer", from.to_string())
-            ("receiver", to.to_string())
-            ("quant", quant.to_string());
-    abi_serializer eosio_system_serializer{fc::json::from_string(eosio_system_abi).as<abi_def>(), abi_serializer_max_time};
-
-    auto payload_buyram = eosio_system_serializer.variant_to_binary( "buyram", variant_buyram, abi_serializer_max_time);
-    eosio::chain::action act_buyram{vector<chain::permission_level>{{from,"active"}},
-                                    config::system_account_name,
-                                    eosio::chain::string_to_name("buyram"),
-                                    payload_buyram};
-
-    return act_buyram;
-}
-
 void Client::checkQueueStatus(void) {
     if(outQueue.size() >= 400) {
         cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 400" << endl;
@@ -532,11 +500,14 @@ void Client::DoSendoutData(void) {
             return (ec || bufferSize<=bytes_transferred) ? 0 : (bufferSize-bytes_transferred);
         };
 
+        auto begin = fc::time_point::now();
         boost::asio::async_write(
                 _socket,
                 boost::asio::buffer(buffer, bufferSize),
                 complete_handler,
-                [this](boost::system::error_code ec, std::size_t w) {
+                [this, begin](boost::system::error_code ec, std::size_t w) {
+                    auto timeCost = (fc::time_point::now() - begin).count();
+                    if(timeCost > 1000) cerr << "async_write cost time:" << timeCost << endl;
                     auto& buff = this->outQueue.front();
                     auto bufferSize = buff.size;
                     this->bufferPool.deleteBuffer(buff.pbuffer);
