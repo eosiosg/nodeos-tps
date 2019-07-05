@@ -819,6 +819,29 @@ namespace eosio {
             pbft_stable_checkpoint,
             checkpoint_request_message,
             compressed_pbft_message>;
+    enum MsgType {
+        HANDSHAKE,
+        CHAIN_SIZE,
+        GO_AWAY,
+        TIME,
+        NOTICE,
+        REQUEST,
+        SYNC_REQUEST,
+        SIGNED_BLOCK,
+        PACKED_TRANSACTION,
+        RESPONSE_P2P,
+        REQUEST_P2P,
+        PBFT_PREPARE,
+        PBFT_COMMIT,
+        PBFT_VIEW_CHANGE,
+        PBFT_NEW_VIEW,
+        PBFT_CHECKPOINT,
+        PBFT_STABLE_CHECKPOINT,
+        CHECKPOINT_REQUEST,
+        COMPRESSED_PBFT,
+
+        MESSAGELEN
+    };
 
 } // namespace eosio
 

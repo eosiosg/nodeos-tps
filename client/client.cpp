@@ -3,90 +3,7 @@
 //
 #include "client.hpp"
 #include "outbuffer.hpp"
-
-enum { BUF_SIZE = 1024 };
-
-class queued_buffer : boost::noncopyable {
-public:
-    void clear_write_queue() {
-        _write_queue.clear();
-        _sync_write_queue.clear();
-        _write_queue_size = 0;
-    }
-
-    void clear_out_queue() {
-        while ( _out_queue.size() > 0 ) {
-            _out_queue.pop_front();
-        }
-    }
-
-    uint32_t write_queue_size() const { return _write_queue_size; }
-
-    bool is_out_queue_empty() const { return _out_queue.empty(); }
-
-    bool ready_to_send() const {
-        // if out_queue is not empty then async_write is in progress
-        return ((!_sync_write_queue.empty() || !_write_queue.empty()) && _out_queue.empty());
-    }
-
-    //
-    bool add_write_queue( const std::shared_ptr<vector<char>>& buff,
-                          std::function<void( boost::system::error_code, std::size_t )> callback,
-                          bool to_sync_queue ) {
-        if( to_sync_queue ) {
-            _sync_write_queue.push_back( {buff, callback} );
-        } else {
-            _write_queue.push_back( {buff, callback} );
-        }
-        _write_queue_size += buff->size();
-        if( _write_queue_size > 2 * def_max_write_queue_size ) {
-            return false;
-        }
-        return true;
-    }
-
-    // 将本类缓存的数据放入到bufs里面去
-    // _sync_write_queue的优先级高于_write_queue
-    void fill_out_buffer( std::vector<boost::asio::const_buffer>& bufs ) {
-        if( _sync_write_queue.size() > 0 ) { // always send msgs from sync_write_queue first
-            fill_out_buffer( bufs, _sync_write_queue );
-        } else { // postpone real_time write_queue if sync queue is not empty
-            fill_out_buffer( bufs, _write_queue );
-           std::cerr << "write queue size expected to be zero" << std::endl;
-        }
-    }
-
-    void out_callback( boost::system::error_code ec, std::size_t w ) {
-        for( auto& m : _out_queue ) {
-            m.callback( ec, w );
-        }
-    }
-
-private:
-    struct queued_write;
-    void fill_out_buffer( std::vector<boost::asio::const_buffer>& bufs,
-                          std::deque<queued_write>& w_queue ) {
-        while ( w_queue.size() > 0 ) {
-            auto& m = w_queue.front();
-            bufs.push_back( boost::asio::buffer( *m.buff ));
-            _write_queue_size -= m.buff->size();
-            _out_queue.emplace_back( m );
-            w_queue.pop_front();
-        }
-    }
-
-private:
-    struct queued_write {
-        std::shared_ptr<vector<char>> buff;
-        std::function<void( boost::system::error_code, std::size_t )> callback;
-    };
-
-    uint32_t _write_queue_size = 0;
-    std::deque<queued_write> _write_queue;
-    std::deque<queued_write> _sync_write_queue; // sync_write_queue will be sent first
-    std::deque<queued_write> _out_queue;
-
-}; // queued_buffer
+#include "stat.hpp"
 
 MsgHandler::MsgHandler(Client* p):_pCli(p) { }
 
@@ -117,7 +34,18 @@ timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
     testInfo.tokenName = string(tokenName);
     testInfo.contractName = name(string(contractName));
     std::srand(std::time(nullptr));
+    this->test = true;
     //buffer = new u_char[1024*1024*16];
+}
+
+Client::Client(boost::asio::io_context& ioc, const char* host, const char* port, uint32_t seconds):
+ioc(ioc),_socket(ioc), _resolver(ioc), timerOutQueue(ioc), timerMakePeerSync(ioc),
+timerSendTimeMessage(ioc), testInfo(ioc, 0, 0) {
+    this->host = string(host);
+    this->port = string(port);
+    this->test = false;
+    reConnect();
+    std::srand(std::time(nullptr));
 }
 
 Client::~Client(void) {
@@ -163,6 +91,73 @@ bool Client::processNextMessage(uint32_t messageLen) {
         if (msg.contains<signed_block>()) msgHandler(std::move(msg.get<signed_block>()));
         else if (msg.contains<packed_transaction>()) msgHandler(std::move(msg.get<packed_transaction>()));
         else msg.visit(msgHandler);
+
+        statData.tsn++;
+        statData.tBytesCount += messageLen;
+        if(msg.contains<handshake_message>()) {
+            statData.sn[MsgType::HANDSHAKE]++;
+            statData.bytesCount[MsgType::HANDSHAKE] += messageLen;
+        } else if(msg.contains<chain_size_message>()) {
+            statData.sn[MsgType::CHAIN_SIZE]++;
+            statData.bytesCount[MsgType::CHAIN_SIZE] += messageLen;
+        }else if(msg.contains<go_away_message>()) {
+            statData.sn[MsgType::GO_AWAY]++;
+            statData.bytesCount[MsgType::GO_AWAY] += messageLen;
+        }else if(msg.contains<time_message>()) {
+            statData.sn[MsgType::TIME]++;
+            statData.bytesCount[MsgType::TIME] += messageLen;
+        }else if(msg.contains<notice_message>()) {
+            statData.sn[MsgType::NOTICE]++;
+            statData.bytesCount[MsgType::NOTICE] += messageLen;
+        }else if(msg.contains<request_message>()) {
+            statData.sn[MsgType::REQUEST]++;
+            statData.bytesCount[MsgType::REQUEST] += messageLen;
+        }else if(msg.contains<sync_request_message>()) {
+            statData.sn[MsgType::SYNC_REQUEST]++;
+            statData.bytesCount[MsgType::SYNC_REQUEST] += messageLen;
+        }else if(msg.contains<signed_block>()) {
+            statData.sn[MsgType::SIGNED_BLOCK]++;
+            statData.bytesCount[MsgType::SIGNED_BLOCK] += messageLen;
+        }else if(msg.contains<packed_transaction>()) {
+            statData.sn[MsgType::PACKED_TRANSACTION]++;
+            statData.bytesCount[MsgType::PACKED_TRANSACTION] += messageLen;
+        }else if(msg.contains<response_p2p_message>()) {
+            statData.sn[MsgType::RESPONSE_P2P]++;
+            statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
+        }else if(msg.contains<response_p2p_message>()) {
+            statData.sn[MsgType::RESPONSE_P2P]++;
+            statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
+        }else if(msg.contains<request_p2p_message>()) {
+            statData.sn[MsgType::REQUEST_P2P]++;
+            statData.bytesCount[MsgType::REQUEST_P2P] += messageLen;
+        }else if(msg.contains<pbft_prepare>()) {
+            statData.sn[MsgType::PBFT_PREPARE]++;
+            statData.bytesCount[MsgType::PBFT_PREPARE] += messageLen;
+        }else if(msg.contains<pbft_commit>()) {
+            statData.sn[MsgType::PBFT_COMMIT]++;
+            statData.bytesCount[MsgType::PBFT_COMMIT] += messageLen;
+        }else if(msg.contains<pbft_view_change>()) {
+            statData.sn[MsgType::PBFT_VIEW_CHANGE]++;
+            statData.bytesCount[MsgType::PBFT_VIEW_CHANGE] += messageLen;
+        }else if(msg.contains<pbft_new_view>()) {
+            statData.sn[MsgType::PBFT_NEW_VIEW]++;
+            statData.bytesCount[MsgType::PBFT_NEW_VIEW] += messageLen;
+        }else if(msg.contains<pbft_checkpoint>()) {
+            statData.sn[MsgType::PBFT_CHECKPOINT]++;
+            statData.bytesCount[MsgType::PBFT_CHECKPOINT] += messageLen;
+        }else if(msg.contains<pbft_stable_checkpoint>()) {
+            statData.sn[MsgType::PBFT_STABLE_CHECKPOINT]++;
+            statData.bytesCount[MsgType::PBFT_STABLE_CHECKPOINT] += messageLen;
+        }else if(msg.contains<checkpoint_request_message>()) {
+            statData.sn[MsgType::CHECKPOINT_REQUEST]++;
+            statData.bytesCount[MsgType::CHECKPOINT_REQUEST] += messageLen;
+        }else if(msg.contains<compressed_pbft_message>()) {
+            statData.sn[MsgType::COMPRESSED_PBFT]++;
+            statData.bytesCount[MsgType::COMPRESSED_PBFT] += messageLen;
+        }else {
+            return false;
+        }
+        statData.print(output);
     } catch(const fc::exception& e) {
         cerr << "fc::exception :" << e.what() << endl;
         return false;
@@ -171,23 +166,23 @@ bool Client::processNextMessage(uint32_t messageLen) {
 }
 
 void Client::handleMessage(const handshake_message& msg) {
-    output << "handshake_message ----------";
-    output << msg << endl;
+//    output << "handshake_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const chain_size_message& msg) {
-    output << "chain_size_message ----------";
-    output << msg << endl;
+//    output << "chain_size_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const go_away_message& msg) {
-    output << "go_away_message ----------";
-    output << msg << endl;
+//    output << "go_away_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const time_message& msg) {
-    output << "time_message ----------";
-    output << msg << endl;
+//    output << "time_message ----------";
+//    output << msg << endl;
 }
 
 // 让对端认为数据已经同步，向此节点传播数据
@@ -320,26 +315,28 @@ void Client::performanceTest(void) {
 
 void Client::handleMessage(const notice_message& msg) {
 
-    output << "notice_message ----------";
-    output << msg << endl;
+//    output << "notice_message ----------";
+//    output << msg << endl;
 
     // 让对端认为数据已经同步(将sync->true)
     timerMakePeerSync.expires_after(std::chrono::milliseconds(500));
     timerMakePeerSync.async_wait(std::bind(&Client::makePeerSync, this));
 
     // 开始性能测试
-    testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(1));
-    testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
+    if(this->test) {
+        testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(1));
+        testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
+    }
 }
 
 void Client::handleMessage(const request_message& msg) {
-    output << "request_message ----------";
-    output << msg << endl;
+//    output << "request_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const sync_request_message& msg) {
-    output << "sync_request_message ----------";
-    output << msg << endl;
+//    output << "sync_request_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const signed_block_ptr& msg) {
@@ -354,16 +351,17 @@ void Client::handleMessage(const packed_transaction_ptr& msg) {
 }
 
 void Client::handleMessage(const response_p2p_message& msg) {
-    output << "response_p2p_message ----------" << endl;
+    //output << "response_p2p_message ----------" << endl;
 }
 
 void Client::handleMessage(const request_p2p_message& msg) {
-    output << "request_p2p_message ----------" << endl;
+    //output << "request_p2p_message ----------" << endl;
 }
 
 void Client::handleMessage(const pbft_prepare &msg) {
-/*    output << "pbft_prepare ----------";
-    output << msg << endl;*/
+    static uint64_t sn = 0;
+    //stat.put(StatInfo<pbft_prepare>(msg, fc::time_point::now(), sn++));
+    //stat.statInfo();
 }
 
 void Client::handleMessage(const pbft_commit &msg) {
@@ -372,13 +370,13 @@ void Client::handleMessage(const pbft_commit &msg) {
 }
 
 void Client::handleMessage(const pbft_view_change &msg) {
-    output << "pbft_view_change ----------";
-    output << msg << endl;
+//    output << "pbft_view_change ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_new_view &msg) {
-    output << "pbft_new_view ----------";
-    output << msg << endl;
+//    output << "pbft_new_view ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const pbft_checkpoint &msg) {
@@ -387,17 +385,17 @@ void Client::handleMessage(const pbft_checkpoint &msg) {
 }
 
 void Client::handleMessage(const pbft_stable_checkpoint &msg) {
-    output << "pbft_stable_checkpoint ----------";
-    output << msg << endl;
+//    output << "pbft_stable_checkpoint ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const checkpoint_request_message &msg) {
-    output << "checkpoint_request_message ----------";
-    output << msg << endl;
+//    output << "checkpoint_request_message ----------";
+//    output << msg << endl;
 }
 
 void Client::handleMessage(const compressed_pbft_message &msg) {
-    output << "compressed_pbft_message ----------" << endl;
+//    output << "compressed_pbft_message ----------" << endl;
 }
 
 
@@ -566,34 +564,26 @@ void Client::OnResolve(boost::system::error_code ec, tcp::resolver::results_type
     }
 }
 
+string StatData::MsgTypeStr[MsgType::MESSAGELEN] = {
+        string("handshake_message"), string("chain_size_message"), string("go_away_message"), string("time_message"),
+        string("notice_message"), string("request_message"), string("sync_request_message"), string("signed_block"),
+        string("packed_transaction"),  string("response_p2p_message"), string("request_p2p_message"), string("pbft_prepare"),
+        string("pbft_commit"), string("pbft_view_change"), string("pbft_new_view"), string("pbft_checkpoint"),
+        string("pbft_stable_checkpoint"), string("checkpoint_request_message"), string("compressed_pbft_message")
+};
 
-int main(int argc, char* argv[]) {
-    cout << argc << endl;
-    for(auto i = 1; i < argc; i++) {
-        cout << argv[i] << endl;
-    }
-    if(argc != 12) {
-        cerr << "Invalid parameter." << endl;
-        cerr << "Usage: ./client ip port chain_id user1 private_key_of_user1 user2 private_key_of_user2 token_name contract_name microseconds_interval count_for_each" << endl;
-        cerr << "Example: ./client 127.0.0.1 9876 "
-             << "cf057bbfb72640471fd910bcb67639c22df9f92470936cddc1ade0e2f2e7dc4f "
-             << "aaaaaaaaaaaa 5HsvPQ2wBttkMMYXfJUw2QW5pYh5ReSqVBqPhprWh3GGhiQyezC "
-             << "bbbbbbbbbbbb 5JAghZg5An1L8DdT75CyQSaZAHuofY9mst52oCW9gQUQjs1n76L "
-             << "BOS eosio.token 1000 2" << endl;
-        exit(1);
-    }
-    const char* host = argv[1];
-    const char* port = argv[2];
-    const char* chain_id = argv[3];
-    const char* user1 = argv[4];
-    const char* user1PK = argv[5];
-    const char* user2 = argv[6];
-    const char* user2PK = argv[7];
-    const char* tokenName = argv[8];
-    const char* contractName = argv[9];
-    uint64_t period = static_cast<uint64_t>(atol(argv[10]));
-    uint32_t eachTime = static_cast<uint32_t>(atoi(argv[11]));
-
+void testTps(char* argv[]) {
+    const char* host = argv[2];
+    const char* port = argv[3];
+    const char* chain_id = argv[4];
+    const char* user1 = argv[5];
+    const char* user1PK = argv[6];
+    const char* user2 = argv[7];
+    const char* user2PK = argv[8];
+    const char* tokenName = argv[9];
+    const char* contractName = argv[10];
+    uint64_t period = static_cast<uint64_t>(atol(argv[11]));
+    uint32_t eachTime = static_cast<uint32_t>(atoi(argv[12]));
     while(true) {
         boost::asio::io_service ioc;
         Client client(
@@ -603,4 +593,41 @@ int main(int argc, char* argv[]) {
         ioc.run();
         cout << "Reconnect." << endl;
     }
+}
+
+void stat(char* argv[]) {
+    const char* host = argv[2];
+    const char* port = argv[3];
+    uint32_t seconds = static_cast<uint32_t>(atoi(argv[4]));
+    while(true) {
+        boost::asio::io_service ioc;
+        Client client(ioc, host, port, seconds);
+        ioc.run();
+        cout << "Reconnect." << endl;
+    }
+}
+
+int main(int argc, char* argv[]) {
+    cout << argc << endl;
+    for(auto i = 1; i < argc; i++) {
+        cout << argv[i] << endl;
+    }
+    if(argc != 13 and argc != 5) {
+        cerr << "Invalid parameter." << endl;
+        cerr << "Usage: ./nodeos-tps test-tps ip port chain_id user1 private_key_of_user1 user2 private_key_of_user2 token_name contract_name microseconds_interval count_for_each" << endl;
+        cerr << "Example: ./nodeos-tps test-tps 127.0.0.1 9876 "
+             << "cf057bbfb72640471fd910bcb67639c22df9f92470936cddc1ade0e2f2e7dc4f "
+             << "aaaaaaaaaaaa 5HsvPQ2wBttkMMYXfJUw2QW5pYh5ReSqVBqPhprWh3GGhiQyezC "
+             << "bbbbbbbbbbbb 5JAghZg5An1L8DdT75CyQSaZAHuofY9mst52oCW9gQUQjs1n76L "
+             << "BOS eosio.token 1000 2" << endl;
+        cerr << "Usage: ./nodeos-tps stat ip port seconds" << endl;
+        cerr << "Example: ./nodeos-tps stat 127.0.0.1 9876 10" << endl;
+        exit(1);
+    }
+
+    const char* feature = argv[1];
+    if(strcmp(feature, "test-tps") == 0) testTps(argv);
+    else if (strcmp(feature, "stat") == 0) stat(argv);
+    else cerr << "Invalid parameter." << endl;
+    return 1;
 }

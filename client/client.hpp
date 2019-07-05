@@ -35,6 +35,7 @@
 #include "eosio.token.wast.hpp"
 #include <boost/asio/high_resolution_timer.hpp>
 #include "outbuffer.hpp"
+#include "stat.hpp"
 
 using boost::asio::ip::tcp;
 using namespace eosio;
@@ -132,8 +133,53 @@ struct OutQueue {
     }
 };
 
+struct StatData {
+    uint64_t tsn{0};//总消息条数
+    uint64_t sn[MsgType::MESSAGELEN];//各消息的条数
+    uint64_t tBytesCount{0}; //总消息字节数
+    uint64_t bytesCount[MsgType::MESSAGELEN]; //各个消息字节数
+    fc::time_point last;
+    static string MsgTypeStr[MsgType::MESSAGELEN];
+    StatData() {
+        for(auto i = 0 ; i < MsgType::MESSAGELEN; i++){
+            sn[i] = 0;
+            bytesCount[i] = 0;
+        }
+        last = fc::time_point::now();
+    }
+    void print(ostream& out){
+        auto now = fc::time_point::now();
+        if((now - last).count() >= 5000000) {
+            last = now;
+            out << "total all messages number:" << tsn
+                << ", total all messages bytes number:" << tBytesCount << endl;
+
+            auto pbft_counts = sn[MsgType::PBFT_PREPARE] + sn[MsgType::PBFT_COMMIT] + sn[MsgType::PBFT_VIEW_CHANGE]
+                    + sn[MsgType::PBFT_NEW_VIEW] + sn[MsgType::PBFT_CHECKPOINT] + sn[MsgType::PBFT_STABLE_CHECKPOINT]
+                    + sn[MsgType::CHECKPOINT_REQUEST] + sn[MsgType::COMPRESSED_PBFT];
+            auto pbft_bytes = bytesCount[MsgType::PBFT_PREPARE] + bytesCount[MsgType::PBFT_COMMIT]
+                    + bytesCount[MsgType::PBFT_VIEW_CHANGE] + bytesCount[MsgType::PBFT_NEW_VIEW]
+                    + bytesCount[MsgType::PBFT_CHECKPOINT] + bytesCount[MsgType::PBFT_STABLE_CHECKPOINT]
+                    + bytesCount[MsgType::CHECKPOINT_REQUEST] + bytesCount[MsgType::COMPRESSED_PBFT];
+            if(pbft_counts == 0 or pbft_bytes == 0 or tsn == 0 or tBytesCount == 0) return;
+            out << "message number, message bytes number, % of pbft message number, % of pbft message bytes number"
+                << ", % of message number, % of message bytes number"<< endl;
+            for(auto i = 0; i < MsgType::MESSAGELEN; i++) {
+                out << MsgTypeStr[i] << ": " << sn[i] << ","
+                                             << bytesCount[i] << ","
+                                             << sn[i]/double(pbft_counts)*100 << ","
+                                             << bytesCount[i]/double(pbft_bytes)*100 << ","
+                                             << sn[i]/double(tsn)*100 << ","
+                                             << bytesCount[i]/double(tBytesCount)*100 << endl;
+            }
+            out << "--------------------------------------------------------------------------------------------------------------------------------" << endl;
+        }
+    }
+};
 
 class Client : public std::enable_shared_from_this<Client>{
+    uint32_t statSeconds; //统计时间间隔
+
     TestInfo testInfo;
     tcp::socket _socket;
     tcp::resolver _resolver;
@@ -148,6 +194,9 @@ class Client : public std::enable_shared_from_this<Client>{
     string port;
     OutQueue outQueue{bufferPool};
     boost::asio::io_context& ioc;
+    StatData statData;
+    bool test;
+    Stat<pbft_prepare> stat{10};
     void makePeerSync(void);
     void performanceTest(void);
     void startGeneration(const string& salt);
@@ -173,6 +222,7 @@ public:
            const char* contractName,
            uint64_t period,
            uint32_t eachTime);
+    Client(boost::asio::io_context& ioc, const char* host, const char* port, uint32_t seconds);
     virtual ~Client(void);
     void OnConnect(boost::system::error_code ec, tcp::endpoint endpoint);
     bool processNextMessage(uint32_t messageLen);
