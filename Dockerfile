@@ -1,6 +1,6 @@
 FROM ubuntu:18.10
 
-#ADD ./sources.list /etc/apt/sources.list
+ADD ./sources.list /etc/apt/sources.list
 RUN apt update -y 
 RUN apt install -y vim 
 RUN apt install -y clang
