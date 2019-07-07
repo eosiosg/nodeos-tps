@@ -20,7 +20,7 @@ Client::Client(
         const char* contractName,
         uint64_t period,
         uint32_t eachTime):
-_socket(ioc), _resolver(ioc), ioc(ioc),
+_socket(ioc), _resolver(ioc), ioc(ioc),grafana(ioc),
 timerOutQueue(ioc), timerMakePeerSync(ioc),
 timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
     this->host = string(host);
@@ -34,16 +34,16 @@ timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
     testInfo.tokenName = string(tokenName);
     testInfo.contractName = name(string(contractName));
     std::srand(std::time(nullptr));
-    this->test = true;
+    this->testTps = true;
     //buffer = new u_char[1024*1024*16];
 }
 
 Client::Client(boost::asio::io_context& ioc, const char* host, const char* port, uint32_t seconds):
-ioc(ioc),_socket(ioc), _resolver(ioc), timerOutQueue(ioc), timerMakePeerSync(ioc),
+ioc(ioc),_socket(ioc), _resolver(ioc), timerOutQueue(ioc), timerMakePeerSync(ioc),grafana(ioc),
 timerSendTimeMessage(ioc), testInfo(ioc, 0, 0) {
     this->host = string(host);
     this->port = string(port);
-    this->test = false;
+    this->testTps = false;
     reConnect();
     std::srand(std::time(nullptr));
 }
@@ -82,6 +82,18 @@ void Client::StartHandshakeMessage(void) {
 //    sendHandshakeMessage(std::move(msg));
 }
 
+void Client::toGrafana(MsgType type, std::size_t len) {
+    if(testTps) return;
+    TimeCostGuard tcg(output, "Client::toGrafana");
+    stringstream ss;
+    ss << "msgstat,msgtype=" << type << ",tstamp="
+       << fc::time_point::now().time_since_epoch().count()
+       << " len=" << len;
+    auto p = ss.str();
+    grafana.send(p.c_str(), p.length());
+}
+
+
 bool Client::processNextMessage(uint32_t messageLen) {
     try {
         auto ds = _messageBuffer.create_datastream();
@@ -91,73 +103,110 @@ bool Client::processNextMessage(uint32_t messageLen) {
         if (msg.contains<signed_block>()) msgHandler(std::move(msg.get<signed_block>()));
         else if (msg.contains<packed_transaction>()) msgHandler(std::move(msg.get<packed_transaction>()));
         else msg.visit(msgHandler);
-
-        statData.tsn++;
-        statData.tBytesCount += messageLen;
-        if(msg.contains<handshake_message>()) {
-            statData.sn[MsgType::HANDSHAKE]++;
-            statData.bytesCount[MsgType::HANDSHAKE] += messageLen;
-        } else if(msg.contains<chain_size_message>()) {
-            statData.sn[MsgType::CHAIN_SIZE]++;
-            statData.bytesCount[MsgType::CHAIN_SIZE] += messageLen;
-        }else if(msg.contains<go_away_message>()) {
-            statData.sn[MsgType::GO_AWAY]++;
-            statData.bytesCount[MsgType::GO_AWAY] += messageLen;
-        }else if(msg.contains<time_message>()) {
-            statData.sn[MsgType::TIME]++;
-            statData.bytesCount[MsgType::TIME] += messageLen;
-        }else if(msg.contains<notice_message>()) {
-            statData.sn[MsgType::NOTICE]++;
-            statData.bytesCount[MsgType::NOTICE] += messageLen;
-        }else if(msg.contains<request_message>()) {
-            statData.sn[MsgType::REQUEST]++;
-            statData.bytesCount[MsgType::REQUEST] += messageLen;
-        }else if(msg.contains<sync_request_message>()) {
-            statData.sn[MsgType::SYNC_REQUEST]++;
-            statData.bytesCount[MsgType::SYNC_REQUEST] += messageLen;
-        }else if(msg.contains<signed_block>()) {
-            statData.sn[MsgType::SIGNED_BLOCK]++;
-            statData.bytesCount[MsgType::SIGNED_BLOCK] += messageLen;
-        }else if(msg.contains<packed_transaction>()) {
-            statData.sn[MsgType::PACKED_TRANSACTION]++;
-            statData.bytesCount[MsgType::PACKED_TRANSACTION] += messageLen;
-        }else if(msg.contains<response_p2p_message>()) {
-            statData.sn[MsgType::RESPONSE_P2P]++;
-            statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
-        }else if(msg.contains<response_p2p_message>()) {
-            statData.sn[MsgType::RESPONSE_P2P]++;
-            statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
-        }else if(msg.contains<request_p2p_message>()) {
-            statData.sn[MsgType::REQUEST_P2P]++;
-            statData.bytesCount[MsgType::REQUEST_P2P] += messageLen;
-        }else if(msg.contains<pbft_prepare>()) {
-            statData.sn[MsgType::PBFT_PREPARE]++;
-            statData.bytesCount[MsgType::PBFT_PREPARE] += messageLen;
-        }else if(msg.contains<pbft_commit>()) {
-            statData.sn[MsgType::PBFT_COMMIT]++;
-            statData.bytesCount[MsgType::PBFT_COMMIT] += messageLen;
-        }else if(msg.contains<pbft_view_change>()) {
-            statData.sn[MsgType::PBFT_VIEW_CHANGE]++;
-            statData.bytesCount[MsgType::PBFT_VIEW_CHANGE] += messageLen;
-        }else if(msg.contains<pbft_new_view>()) {
-            statData.sn[MsgType::PBFT_NEW_VIEW]++;
-            statData.bytesCount[MsgType::PBFT_NEW_VIEW] += messageLen;
-        }else if(msg.contains<pbft_checkpoint>()) {
-            statData.sn[MsgType::PBFT_CHECKPOINT]++;
-            statData.bytesCount[MsgType::PBFT_CHECKPOINT] += messageLen;
-        }else if(msg.contains<pbft_stable_checkpoint>()) {
-            statData.sn[MsgType::PBFT_STABLE_CHECKPOINT]++;
-            statData.bytesCount[MsgType::PBFT_STABLE_CHECKPOINT] += messageLen;
-        }else if(msg.contains<checkpoint_request_message>()) {
-            statData.sn[MsgType::CHECKPOINT_REQUEST]++;
-            statData.bytesCount[MsgType::CHECKPOINT_REQUEST] += messageLen;
-        }else if(msg.contains<compressed_pbft_message>()) {
-            statData.sn[MsgType::COMPRESSED_PBFT]++;
-            statData.bytesCount[MsgType::COMPRESSED_PBFT] += messageLen;
-        }else {
-            return false;
+        if(!testTps) {
+            statData.tsn++;
+            statData.tBytesCount += messageLen;
+            if (msg.contains<handshake_message>()) {
+                statData.sn[MsgType::HANDSHAKE]++;
+                statData.bytesCount[MsgType::HANDSHAKE] += messageLen;
+                toGrafana(MsgType::HANDSHAKE, messageLen);
+            }
+            else if (msg.contains<chain_size_message>()) {
+                statData.sn[MsgType::CHAIN_SIZE]++;
+                statData.bytesCount[MsgType::CHAIN_SIZE] += messageLen;
+                toGrafana(MsgType::CHAIN_SIZE, messageLen);
+            }
+            else if (msg.contains<go_away_message>()) {
+                statData.sn[MsgType::GO_AWAY]++;
+                statData.bytesCount[MsgType::GO_AWAY] += messageLen;
+                toGrafana(MsgType::GO_AWAY, messageLen);
+            }
+            else if (msg.contains<time_message>()) {
+                statData.sn[MsgType::TIME]++;
+                statData.bytesCount[MsgType::TIME] += messageLen;
+                toGrafana(MsgType::TIME, messageLen);
+            }
+            else if (msg.contains<notice_message>()) {
+                statData.sn[MsgType::NOTICE]++;
+                statData.bytesCount[MsgType::NOTICE] += messageLen;
+                toGrafana(MsgType::NOTICE, messageLen);
+            }
+            else if (msg.contains<request_message>()) {
+                statData.sn[MsgType::REQUEST]++;
+                statData.bytesCount[MsgType::REQUEST] += messageLen;
+                toGrafana(MsgType::REQUEST, messageLen);
+            }
+            else if (msg.contains<sync_request_message>()) {
+                statData.sn[MsgType::SYNC_REQUEST]++;
+                statData.bytesCount[MsgType::SYNC_REQUEST] += messageLen;
+                toGrafana(MsgType::SYNC_REQUEST, messageLen);
+            }
+            else if (msg.contains<signed_block>()) {
+                statData.sn[MsgType::SIGNED_BLOCK]++;
+                statData.bytesCount[MsgType::SIGNED_BLOCK] += messageLen;
+                toGrafana(MsgType::SIGNED_BLOCK, messageLen);
+            }
+            else if (msg.contains<packed_transaction>()) {
+                statData.sn[MsgType::PACKED_TRANSACTION]++;
+                statData.bytesCount[MsgType::PACKED_TRANSACTION] += messageLen;
+                toGrafana(MsgType::PACKED_TRANSACTION, messageLen);
+            }
+            else if (msg.contains<response_p2p_message>()) {
+                statData.sn[MsgType::RESPONSE_P2P]++;
+                statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
+                toGrafana(MsgType::CHAIN_SIZE, messageLen);
+            }
+            else if (msg.contains<request_p2p_message>()) {
+                statData.sn[MsgType::REQUEST_P2P]++;
+                statData.bytesCount[MsgType::REQUEST_P2P] += messageLen;
+                toGrafana(MsgType::REQUEST_P2P, messageLen);
+            }
+            else if (msg.contains<pbft_prepare>()) {
+                statData.sn[MsgType::PBFT_PREPARE]++;
+                statData.bytesCount[MsgType::PBFT_PREPARE] += messageLen;
+                toGrafana(MsgType::PBFT_PREPARE, messageLen);
+            }
+            else if (msg.contains<pbft_commit>()) {
+                statData.sn[MsgType::PBFT_COMMIT]++;
+                statData.bytesCount[MsgType::PBFT_COMMIT] += messageLen;
+                toGrafana(MsgType::PBFT_COMMIT, messageLen);
+            }
+            else if (msg.contains<pbft_view_change>()) {
+                statData.sn[MsgType::PBFT_VIEW_CHANGE]++;
+                statData.bytesCount[MsgType::PBFT_VIEW_CHANGE] += messageLen;
+                toGrafana(MsgType::PBFT_VIEW_CHANGE, messageLen);
+            }
+            else if (msg.contains<pbft_new_view>()) {
+                statData.sn[MsgType::PBFT_NEW_VIEW]++;
+                statData.bytesCount[MsgType::PBFT_NEW_VIEW] += messageLen;
+                toGrafana(MsgType::PBFT_NEW_VIEW, messageLen);
+            }
+            else if (msg.contains<pbft_checkpoint>()) {
+                statData.sn[MsgType::PBFT_CHECKPOINT]++;
+                statData.bytesCount[MsgType::PBFT_CHECKPOINT] += messageLen;
+                toGrafana(MsgType::PBFT_CHECKPOINT, messageLen);
+            }
+            else if (msg.contains<pbft_stable_checkpoint>()) {
+                statData.sn[MsgType::PBFT_STABLE_CHECKPOINT]++;
+                statData.bytesCount[MsgType::PBFT_STABLE_CHECKPOINT] += messageLen;
+                toGrafana(MsgType::PBFT_STABLE_CHECKPOINT, messageLen);
+            }
+            else if (msg.contains<checkpoint_request_message>()) {
+                statData.sn[MsgType::CHECKPOINT_REQUEST]++;
+                statData.bytesCount[MsgType::CHECKPOINT_REQUEST] += messageLen;
+                toGrafana(MsgType::CHECKPOINT_REQUEST, messageLen);
+            }
+            else if (msg.contains<compressed_pbft_message>()) {
+                statData.sn[MsgType::COMPRESSED_PBFT]++;
+                statData.bytesCount[MsgType::COMPRESSED_PBFT] += messageLen;
+                toGrafana(MsgType::COMPRESSED_PBFT, messageLen);
+            }
+            else {
+                cerr << "Invalid message type" << endl;
+                return false;
+            }
         }
-        statData.print(output);
+        //statData.print(output);
     } catch(const fc::exception& e) {
         cerr << "fc::exception :" << e.what() << endl;
         return false;
@@ -267,7 +316,6 @@ void Client::startGeneration(const string& salt) {
 }
 
 void Client::sendTransferTransaction() {
-    //OutputGuard og(output, string("sendTransferTransaction"));
     try {
         testInfo.timerSendTransferTransaction.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
         testInfo.timerSendTransferTransaction.async_wait(std::bind(&Client::sendTransferTransaction, this));
@@ -308,7 +356,6 @@ void Client::sendTransferTransaction() {
 }
 
 void Client::performanceTest(void) {
-    OutputGuard og(output, string("performanceTest"));
     startGeneration("abcdefg");
 }
 
@@ -323,7 +370,7 @@ void Client::handleMessage(const notice_message& msg) {
     timerMakePeerSync.async_wait(std::bind(&Client::makePeerSync, this));
 
     // 开始性能测试
-    if(this->test) {
+    if(this->testTps) {
         testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(1));
         testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
     }
@@ -359,7 +406,7 @@ void Client::handleMessage(const request_p2p_message& msg) {
 }
 
 void Client::handleMessage(const pbft_prepare &msg) {
-    static uint64_t sn = 0;
+    //static uint64_t sn = 0;
     //stat.put(StatInfo<pbft_prepare>(msg, fc::time_point::now(), sn++));
     //stat.statInfo();
 }

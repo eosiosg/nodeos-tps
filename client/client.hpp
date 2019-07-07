@@ -36,6 +36,7 @@
 #include <boost/asio/high_resolution_timer.hpp>
 #include "outbuffer.hpp"
 #include "stat.hpp"
+#include "grafana.hpp"
 
 using boost::asio::ip::tcp;
 using namespace eosio;
@@ -85,21 +86,21 @@ struct TestInfo {
 
 };
 
-class OutputGuard {
+class TimeCostGuard {
     string thing;
     fc::time_point start;
     ostream & out;
-    OutputGuard() = delete;
+    TimeCostGuard() = delete;
 public:
-    OutputGuard(ostream& out, string thing):out(out),thing(thing) {
+    TimeCostGuard(ostream& out, string thing):out(out),thing(thing) {
         start = fc::time_point::now();
-        out << "Begin do \"" << thing << "\"" << endl;
+        //out << "Begin do \"" << thing << "\"" << endl;
     }
-    virtual ~OutputGuard() {
-        out << "End do \"" << thing
-            << "\"," << "time cost "
-            << (fc::time_point::now() - start).count()/1000.0
-            << " ms" << endl;
+    virtual ~TimeCostGuard() {
+        auto cost = (fc::time_point::now() - start).count()/1000.0;
+        if(cost > 1) { // > 1ms
+            out << "End do \"" << thing << "\"," << "time cost " << cost << " ms" << endl;
+        }
     }
 };
 
@@ -179,7 +180,7 @@ struct StatData {
 
 class Client : public std::enable_shared_from_this<Client>{
     uint32_t statSeconds; //统计时间间隔
-
+    Grafana grafana;
     TestInfo testInfo;
     tcp::socket _socket;
     tcp::resolver _resolver;
@@ -195,7 +196,7 @@ class Client : public std::enable_shared_from_this<Client>{
     OutQueue outQueue{bufferPool};
     boost::asio::io_context& ioc;
     StatData statData;
-    bool test;
+    bool testTps;
     Stat<pbft_prepare> stat{10};
     void makePeerSync(void);
     void performanceTest(void);
@@ -209,6 +210,7 @@ class Client : public std::enable_shared_from_this<Client>{
     }
     void DoSendoutData(void);
     void StartSendoutData(void);
+    void toGrafana(MsgType type, std::size_t len);
 public:
     Client(boost::asio::io_context& ioc,
            const char* host,

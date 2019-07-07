@@ -18,7 +18,8 @@ RUN git clone https://github.com/EOSIO/fc.git --recursive
 RUN cd fc && mkdir build && cd build && cmake ../ && make -j && make install
 
 # nodeos-tps source code compile
-RUN git clone https://github.com/eosiosg/nodeos-tps.git
-RUN cd nodeos-tps && git checkout feature/test_client_for_connect_nodeos && git pull
+#RUN git clone https://github.com/eosiosg/nodeos-tps.git
+#RUN cd nodeos-tps && git checkout feature/test_client_for_connect_nodeos && git pull
+ADD ./ nodeos-tps/
 RUN mkdir -p nodeos-tps/build && cd nodeos-tps/build && cmake ../ -DCMAKE_INSTALL_PREFIX=/usr && make -j && make install
 
