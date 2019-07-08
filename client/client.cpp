@@ -86,9 +86,8 @@ void Client::toGrafana(MsgType type, std::size_t len) {
     if(testTps) return;
     TimeCostGuard tcg(output, "Client::toGrafana");
     stringstream ss;
-    ss << "msgstat,msgtype=" << type << ",tstamp="
-       << fc::time_point::now().time_since_epoch().count()
-       << " len=" << len;
+    ss << "msgstat,m=" << type
+       << " len=" << len << " " << fc::time_point::now().time_since_epoch().count()*1000;
     auto p = ss.str();
     grafana.send(p.c_str(), p.length());
 }
