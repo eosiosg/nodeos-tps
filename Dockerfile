@@ -23,3 +23,4 @@ RUN cd fc && mkdir build && cd build && cmake ../ && make -j && make install
 ADD ./ nodeos-tps/
 RUN mkdir -p nodeos-tps/build && cd nodeos-tps/build && cmake ../ -DCMAKE_INSTALL_PREFIX=/usr && make -j && make install
 
+RUN rm -rf nodeos-tps

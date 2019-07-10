@@ -531,7 +531,8 @@ void Client::DoSendoutData(void) {
         }
 
         if (outQueue.empty()) {
-            timerOutQueue.expires_after(std::chrono::microseconds(20));
+            auto sleep = testTps ? 20:20000;
+            timerOutQueue.expires_after(std::chrono::microseconds(sleep));
             timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
             return;
         }
