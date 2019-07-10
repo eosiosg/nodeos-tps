@@ -224,7 +224,7 @@ public:
            const char* contractName,
            uint64_t period,
            uint32_t eachTime);
-    Client(boost::asio::io_context& ioc, const char* host, const char* port, uint32_t seconds);
+    Client(boost::asio::io_context& ioc, const char* host, const char* port, const char* grafanaIP, const char* grafanPort);
     virtual ~Client(void);
     void OnConnect(boost::system::error_code ec, tcp::endpoint endpoint);
     bool processNextMessage(uint32_t messageLen);
