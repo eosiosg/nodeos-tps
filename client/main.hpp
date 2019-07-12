@@ -4,4 +4,8 @@
 
 #pragma once
 
-#include "client.hpp"
+#include "clientpool.hpp"
+#include "producer.hpp"
+#include "tpsclient.hpp"
+#include "configparser.hpp"
+#include "statclient.hpp"

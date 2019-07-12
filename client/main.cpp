@@ -4,7 +4,7 @@
 
 #include "main.hpp"
 
-void testTps(char* argv[]) {
+/*void testTps(char* argv[]) {
     const char* host = argv[2];
     const char* port = argv[3];
     const char* chain_id = argv[4];
@@ -17,7 +17,7 @@ void testTps(char* argv[]) {
     uint64_t period = static_cast<uint64_t>(atol(argv[11]));
     uint32_t eachTime = static_cast<uint32_t>(atoi(argv[12]));
     while(true) {
-        boost::asio::io_service ioc;
+        auto& ioc = IOC::app();
         Client client(
                 ioc, host, port, chain_id,
                 user1, user1PK, user2, user2PK,
@@ -33,34 +33,44 @@ void stat(char* argv[]) {
     const char* grafanaIP = argv[4];
     const char* grafanaPort = argv[5];
     while(true) {
-        boost::asio::io_service ioc;
+        auto& ioc = IOC::app();
         Client client(ioc, host, port, grafanaIP, grafanaPort);
         ioc.run();
         cout << "Reconnect." << endl;
     }
-}
+}*/
 
 int main(int argc, char* argv[]) {
-    cout << argc << endl;
-    for(auto i = 1; i < argc; i++) {
-        cout << argv[i] << endl;
+    if(argc != 2 or strcmp(argv[1], "-h") == 0 or strcmp(argv[1], "--help") == 0) {
+        cerr << "Usage: nodeos-tps ConfigFile" << endl;
+        return 1;
     }
-    if(argc != 13 and argc != 6) {
-        cerr << "Invalid parameter." << endl;
-        cerr << "Usage: ./nodeos-tps test-tps ip port chain_id user1 private_key_of_user1 user2 private_key_of_user2 token_name contract_name microseconds_interval count_for_each" << endl;
-        cerr << "Example: ./nodeos-tps test-tps 127.0.0.1 9876 "
-             << "cf057bbfb72640471fd910bcb67639c22df9f92470936cddc1ade0e2f2e7dc4f "
-             << "aaaaaaaaaaaa 5HsvPQ2wBttkMMYXfJUw2QW5pYh5ReSqVBqPhprWh3GGhiQyezC "
-             << "bbbbbbbbbbbb 5JAghZg5An1L8DdT75CyQSaZAHuofY9mst52oCW9gQUQjs1n76L "
-             << "BOS eosio.token 1000 2" << endl;
-        cerr << "Usage: ./nodeos-tps stat ip port grafanaIP grafanaPort" << endl;
-        cerr << "Example: ./nodeos-tps stat 127.0.0.1 9876 127.0.0.1 8089" << endl;
-        exit(1);
-    }
+    ConfigParser configParser(argv[1]);
+    std::unique_ptr<TpsProducer> pTpsProducer;
+    ClientPool cpool{5000};
 
-    const char* feature = argv[1];
-    if(strcmp(feature, "test-tps") == 0) testTps(argv);
-    else if (strcmp(feature, "stat") == 0) stat(argv);
-    else cerr << "Invalid parameter." << endl;
+    if(configParser.tps) {
+        pTpsProducer= std::make_unique<TpsProducer>(configParser.chainId,
+                configParser.user1, configParser.user1PrivateKey,
+                configParser.user2, configParser.user2PrivateKey,
+                configParser.tokenName, configParser.contractName,
+                configParser.microSeconds, configParser.eachTime);
+        auto size = configParser.tpsHosts.size();
+        for(auto i = 0; i < size; i ++) {
+            auto p = std::make_unique<TpsClient>(configParser.tpsHosts[i], configParser.tpsPorts[i]);
+            pTpsProducer->Register(*p);//注册获取生产者数据
+            cpool.newClient(std::move(p));//注册到ClientPool(负责管理自动重连等)
+        }
+    }
+    if(configParser.stat) {
+        auto size = configParser.statHosts.size();
+        for(auto i = 0; i < size; i++) {
+            auto p = std::make_unique<StatClient>(
+                    configParser.statHosts[i], configParser.statPorts[i],
+                    configParser.influxdbHost, configParser.influxdbPort);
+            cpool.newClient(std::move(p));
+        }
+    }
+    IOC::app().run();
     return 1;
 }

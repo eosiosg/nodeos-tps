@@ -7,62 +7,14 @@
 
 MsgHandler::MsgHandler(Client* p):_pCli(p) { }
 
-Client::Client(
-        boost::asio::io_context& ioc,
-        const char* host,
-        const char* port,
-        const char* cid,
-        const char* user1,
-        const char* user1PK,
-        const char* user2,
-        const char* user2PK,
-        const char* tokenName,
-        const char* contractName,
-        uint64_t period,
-        uint32_t eachTime):
-_socket(ioc), _resolver(ioc), ioc(ioc),grafana(ioc),
-timerOutQueue(ioc), timerMakePeerSync(ioc),
-timerSendTimeMessage(ioc), testInfo(ioc, period, eachTime) {
-    this->host = string(host);
-    this->port = string(port);
-    reConnect();
-    testInfo.chain_id = chain_id_type(string(cid));
-    testInfo.user1 = name(string(user1));
-    testInfo.user2 = name(string(user2));
-    testInfo.user1PK = fc::crypto::private_key(string(user1PK));
-    testInfo.user2PK = fc::crypto::private_key(string(user2PK));
-    testInfo.tokenName = string(tokenName);
-    testInfo.contractName = name(string(contractName));
-    std::srand(std::time(nullptr));
-    this->testTps = true;
-    //buffer = new u_char[1024*1024*16];
-}
-
-Client::Client(boost::asio::io_context& ioc,
-        const char* host, const char* port,
-        const char* grafanaIP, const char* grafanPort):
-ioc(ioc),_socket(ioc), _resolver(ioc), timerOutQueue(ioc),
-timerMakePeerSync(ioc),grafana(ioc, grafanaIP, grafanPort),
-timerSendTimeMessage(ioc), testInfo(ioc, 0, 0) {
-    this->host = string(host);
-    this->port = string(port);
-    this->testTps = false;
-    reConnect();
-    std::srand(std::time(nullptr));
-}
-
-Client::~Client(void) {
-    cout << "Client::~Client(void)" << endl;
-    //delete [] buffer;
-}
-
 void Client::OnConnect(boost::system::error_code ec, tcp::endpoint endpoint) {
+    canCheckStatus = true;
     if (ec) {
-        std::cout << "Connect failed: " << ec.message() << std::endl;
-        _socket.close();
-        ioc.stop();
+        cerr << "Connect failed: " << ec.message() << std::endl;
+        connect = false;
         return;
     }
+    connect = true;
     StartSendTimeMessage();
     StartReadMessage();
     StartHandshakeMessage();
@@ -74,195 +26,11 @@ void Client::sendHandshakeMessage(handshake_message && msg) {
 }
 
 void Client::StartHandshakeMessage(void) {
-    auto msg = FakeData::fakeHandShakeMessage(testInfo.chain_id);
+    auto msg = FakeData::fakeHandShakeMessage();
     sendHandshakeMessage(std::move(msg));
-
-    /* 此数据发送会导致端口重置，发送出去会返回goaway message*/
-//    msg = FakeData::invalidFakeHandShakeMessage();
-//    sendHandshakeMessage(std::move(msg));
-
-//    msg = FakeData::acceptHandshakeMessage();
-//    sendHandshakeMessage(std::move(msg));
 }
-
-void Client::toGrafana(MsgType type, std::size_t len) {
-    if(testTps) return;
-    TimeCostGuard tcg(output, "Client::toGrafana");
-    stringstream ss;
-    ss << "msgstat,m=" << type
-       << " len=" << len << " " << fc::time_point::now().time_since_epoch().count()*1000;
-    auto p = ss.str();
-    grafana.send(p.c_str(), p.length());
-}
-
-
-bool Client::processNextMessage(uint32_t messageLen) {
-    try {
-        auto ds = _messageBuffer.create_datastream();
-        net_message msg;
-        fc::raw::unpack(ds, msg);
-        MsgHandler msgHandler(this);
-        if (msg.contains<signed_block>()) msgHandler(std::move(msg.get<signed_block>()));
-        else if (msg.contains<packed_transaction>()) msgHandler(std::move(msg.get<packed_transaction>()));
-        else msg.visit(msgHandler);
-        if(!testTps) {
-            statData.tsn++;
-            statData.tBytesCount += messageLen;
-            if (msg.contains<handshake_message>()) {
-                statData.sn[MsgType::HANDSHAKE]++;
-                statData.bytesCount[MsgType::HANDSHAKE] += messageLen;
-                toGrafana(MsgType::HANDSHAKE, messageLen);
-            }
-            else if (msg.contains<chain_size_message>()) {
-                statData.sn[MsgType::CHAIN_SIZE]++;
-                statData.bytesCount[MsgType::CHAIN_SIZE] += messageLen;
-                toGrafana(MsgType::CHAIN_SIZE, messageLen);
-            }
-            else if (msg.contains<go_away_message>()) {
-                statData.sn[MsgType::GO_AWAY]++;
-                statData.bytesCount[MsgType::GO_AWAY] += messageLen;
-                toGrafana(MsgType::GO_AWAY, messageLen);
-            }
-            else if (msg.contains<time_message>()) {
-                statData.sn[MsgType::TIME]++;
-                statData.bytesCount[MsgType::TIME] += messageLen;
-                toGrafana(MsgType::TIME, messageLen);
-            }
-            else if (msg.contains<notice_message>()) {
-                statData.sn[MsgType::NOTICE]++;
-                statData.bytesCount[MsgType::NOTICE] += messageLen;
-                toGrafana(MsgType::NOTICE, messageLen);
-            }
-            else if (msg.contains<request_message>()) {
-                statData.sn[MsgType::REQUEST]++;
-                statData.bytesCount[MsgType::REQUEST] += messageLen;
-                toGrafana(MsgType::REQUEST, messageLen);
-            }
-            else if (msg.contains<sync_request_message>()) {
-                statData.sn[MsgType::SYNC_REQUEST]++;
-                statData.bytesCount[MsgType::SYNC_REQUEST] += messageLen;
-                toGrafana(MsgType::SYNC_REQUEST, messageLen);
-            }
-            else if (msg.contains<signed_block>()) {
-                statData.sn[MsgType::SIGNED_BLOCK]++;
-                statData.bytesCount[MsgType::SIGNED_BLOCK] += messageLen;
-                toGrafana(MsgType::SIGNED_BLOCK, messageLen);
-            }
-            else if (msg.contains<packed_transaction>()) {
-                statData.sn[MsgType::PACKED_TRANSACTION]++;
-                statData.bytesCount[MsgType::PACKED_TRANSACTION] += messageLen;
-                toGrafana(MsgType::PACKED_TRANSACTION, messageLen);
-            }
-            else if (msg.contains<response_p2p_message>()) {
-                statData.sn[MsgType::RESPONSE_P2P]++;
-                statData.bytesCount[MsgType::RESPONSE_P2P] += messageLen;
-                toGrafana(MsgType::CHAIN_SIZE, messageLen);
-            }
-            else if (msg.contains<request_p2p_message>()) {
-                statData.sn[MsgType::REQUEST_P2P]++;
-                statData.bytesCount[MsgType::REQUEST_P2P] += messageLen;
-                toGrafana(MsgType::REQUEST_P2P, messageLen);
-            }
-            else if (msg.contains<pbft_prepare>()) {
-                statData.sn[MsgType::PBFT_PREPARE]++;
-                statData.bytesCount[MsgType::PBFT_PREPARE] += messageLen;
-                toGrafana(MsgType::PBFT_PREPARE, messageLen);
-            }
-            else if (msg.contains<pbft_commit>()) {
-                statData.sn[MsgType::PBFT_COMMIT]++;
-                statData.bytesCount[MsgType::PBFT_COMMIT] += messageLen;
-                toGrafana(MsgType::PBFT_COMMIT, messageLen);
-            }
-            else if (msg.contains<pbft_view_change>()) {
-                statData.sn[MsgType::PBFT_VIEW_CHANGE]++;
-                statData.bytesCount[MsgType::PBFT_VIEW_CHANGE] += messageLen;
-                toGrafana(MsgType::PBFT_VIEW_CHANGE, messageLen);
-            }
-            else if (msg.contains<pbft_new_view>()) {
-                statData.sn[MsgType::PBFT_NEW_VIEW]++;
-                statData.bytesCount[MsgType::PBFT_NEW_VIEW] += messageLen;
-                toGrafana(MsgType::PBFT_NEW_VIEW, messageLen);
-            }
-            else if (msg.contains<pbft_checkpoint>()) {
-                statData.sn[MsgType::PBFT_CHECKPOINT]++;
-                statData.bytesCount[MsgType::PBFT_CHECKPOINT] += messageLen;
-                toGrafana(MsgType::PBFT_CHECKPOINT, messageLen);
-            }
-            else if (msg.contains<pbft_stable_checkpoint>()) {
-                statData.sn[MsgType::PBFT_STABLE_CHECKPOINT]++;
-                statData.bytesCount[MsgType::PBFT_STABLE_CHECKPOINT] += messageLen;
-                toGrafana(MsgType::PBFT_STABLE_CHECKPOINT, messageLen);
-            }
-            else if (msg.contains<checkpoint_request_message>()) {
-                statData.sn[MsgType::CHECKPOINT_REQUEST]++;
-                statData.bytesCount[MsgType::CHECKPOINT_REQUEST] += messageLen;
-                toGrafana(MsgType::CHECKPOINT_REQUEST, messageLen);
-            }
-            else if (msg.contains<compressed_pbft_message>()) {
-                statData.sn[MsgType::COMPRESSED_PBFT]++;
-                statData.bytesCount[MsgType::COMPRESSED_PBFT] += messageLen;
-                toGrafana(MsgType::COMPRESSED_PBFT, messageLen);
-            }
-            else {
-                cerr << "Invalid message type" << endl;
-                return false;
-            }
-        }
-        //statData.print(output);
-    } catch(const fc::exception& e) {
-        cerr << "fc::exception :" << e.what() << endl;
-        return false;
-    }
-    return true;
-}
-
-void Client::handleMessage(const handshake_message& msg) {
-//    output << "handshake_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const chain_size_message& msg) {
-//    output << "chain_size_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const go_away_message& msg) {
-//    output << "go_away_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const time_message& msg) {
-//    output << "time_message ----------";
-//    output << msg << endl;
-}
-
-// 让对端认为数据已经同步，向此节点传播数据
-void Client::makePeerSync(void) {
-    request_message rm;
-    rm.req_blocks.mode = none;
-    rm.req_blocks.pending = 0;
-    rm.req_trx.mode = none;
-    rm.req_trx.pending = 0;
-    sendMessage(std::move(rm));
-    output << "send request message successfully." << endl;
-}
-
-void Client::checkQueueStatus(void) {
-    if(outQueue.size() >= 400) {
-        cerr << "Warning:" <<"outQueue.size(" << outQueue.size() << ") > 400" << endl;
-    }
-    if(outQueue.size() >= 800) {
-        //防御，防止内存沾满
-        cerr << "Error:" <<"outQueue.size(" << outQueue.size() << ") > 800" << endl;
-        _socket.close();
-        ioc.stop();
-        EOS_THROW(eosio::chain::queue_over_max_size_exception, "queue_over_max_size_exception.");
-    }
-}
-
 
 void Client::sendMessage(packed_transaction&& msg) {
-    checkQueueStatus();
     net_message netMsg(msg);
     int32_t payload_size = fc::raw::pack_size(netMsg);
     char* header = reinterpret_cast<char*>(&payload_size);
@@ -280,173 +48,50 @@ void Client::sendMessage(packed_transaction&& msg) {
     outQueue.wIndex += messageLen;
 }
 
-void Client::startGeneration(const string& salt) {
-    abi_serializer eosio_token_serializer{
-        fc::json::from_string(eosio_token_abi).as<abi_def>(),
-        testInfo.abi_serializer_max_time
-    };
-    //create the actions here
-    testInfo.act_a_to_b.account = testInfo.contractName;
-    testInfo.act_a_to_b.name = name("transfer");
-    testInfo.act_a_to_b.authorization = vector<permission_level>{{testInfo.user1,config::active_name}};
-    testInfo.act_a_to_b.data = eosio_token_serializer.variant_to_binary("transfer",
-            fc::json::from_string(
-                    fc::format_string("{\"from\":\"${user1}\",\"to\":\"${user2}\","
-                                      "\"quantity\":\"0.0001 ${token}\",\"memo\":\"${l}\"}",
-                    fc::mutable_variant_object()
-                    ("l", salt)
-                    ("user1", testInfo.user1.to_string())
-                    ("user2", testInfo.user2.to_string())
-                    ("token", testInfo.tokenName))),
-            testInfo.abi_serializer_max_time);
-
-    testInfo.act_b_to_a.account = testInfo.contractName;
-    testInfo.act_b_to_a.name = name("transfer");
-    testInfo.act_b_to_a.authorization = vector<permission_level>{{testInfo.user2,config::active_name}};
-    testInfo.act_b_to_a.data = eosio_token_serializer.variant_to_binary("transfer",
-            fc::json::from_string(
-                    fc::format_string("{\"from\":\"${user2}\",\"to\":\"${user1}\","
-                                      "\"quantity\":\"0.0001 ${token}\",\"memo\":\"${l}\"}",
-                    fc::mutable_variant_object()
-                    ("l", salt)
-                    ("user1", testInfo.user1.to_string())
-                    ("user2", testInfo.user2.to_string())
-                    ("token", testInfo.tokenName))),
-            testInfo.abi_serializer_max_time);
-
-    sendTransferTransaction();
-}
-
-void Client::sendTransferTransaction() {
+bool Client::processNextMessage(uint32_t messageLen) {
     try {
-        testInfo.timerSendTransferTransaction.expires_after(std::chrono::microseconds(testInfo.timer_timeout));
-        testInfo.timerSendTransferTransaction.async_wait(std::bind(&Client::sendTransferTransaction, this));
-        auto chainid = testInfo.chain_id;
-        static uint64_t nonce = static_cast<uint64_t>(fc::time_point::now().sec_since_epoch()) << 32;
-        block_id_type reference_block_id = testInfo.head_block_id;
-        for (auto i = 0; i<testInfo.batch; i++) {
-            if (std::rand()%2==1) {
-                signed_transaction trx;
-                trx.actions.push_back(testInfo.act_a_to_b);
-                trx.context_free_actions.emplace_back(
-                        action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
-                trx.set_reference_block(reference_block_id);
-                trx.expiration = fc::time_point::now()+fc::seconds(30);
-                trx.max_net_usage_words = 100;
-                trx.sign(testInfo.user1PK, chainid);
-                sendMessage(packed_transaction(trx));
-            }
-            else {
-                signed_transaction trx;
-                trx.actions.push_back(testInfo.act_b_to_a);
-                trx.context_free_actions.emplace_back(
-                        action({}, config::null_account_name, "nonce", fc::raw::pack(nonce++)));
-                trx.set_reference_block(reference_block_id);
-                trx.expiration = fc::time_point::now()+fc::seconds(30);
-                trx.max_net_usage_words = 100;
-                trx.sign(testInfo.user2PK, chainid);
-                sendMessage(packed_transaction(trx));
-            }
-        }
-    }catch (fc::exception e) {
-        cerr << "fc::exception: " << e.what() << endl;
-        testInfo.timerSendTransferTransaction.cancel();
-    }catch (std::exception e) {
-        cerr << "std::exception: " << e.what() << endl;
-        testInfo.timerSendTransferTransaction.cancel();
+        auto ds = _messageBuffer.create_datastream();
+        net_message msg;
+        fc::raw::unpack(ds, msg);
+        MsgHandler msgHandler(this);
+        if (msg.contains<signed_block>()) msgHandler(std::move(msg.get<signed_block>()));
+        else if (msg.contains<packed_transaction>()) msgHandler(std::move(msg.get<packed_transaction>()));
+        else msg.visit(msgHandler);
+    } catch(const fc::exception& e) {
+        cerr << "fc::exception :" << e.what() << endl;
+        return false;
     }
+    return true;
 }
 
-void Client::performanceTest(void) {
-    startGeneration("abcdefg");
+void Client::Reconnect(void) {
+    output << "connect to " << host << ":" << port << endl;
+    if(_socket.is_open()) _socket.close();
+    connect = false;
+    canCheckStatus = false;
+    timerMakePeerSync = boost::asio::steady_timer{IOC::app()};
+    timerSendTimeMessage = boost::asio::steady_timer{IOC::app()};
+    timerOutQueue = boost::asio::steady_timer{IOC::app()};
+    _resolver.async_resolve(tcp::v4(), host, port,
+            std::bind(&Client::OnResolve, this, std::placeholders::_1, std::placeholders::_2));
 }
 
+// 让对端认为数据已经同步，向此节点传播数据
+void Client::makePeerSync(void) {
+    request_message rm;
+    rm.req_blocks.mode = none;
+    rm.req_blocks.pending = 0;
+    rm.req_trx.mode = none;
+    rm.req_trx.pending = 0;
+    sendMessage(std::move(rm));
+    output << "send request message successfully." << endl;
+}
 
 void Client::handleMessage(const notice_message& msg) {
-
-//    output << "notice_message ----------";
-//    output << msg << endl;
-
     // 让对端认为数据已经同步(将sync->true)
     timerMakePeerSync.expires_after(std::chrono::milliseconds(500));
     timerMakePeerSync.async_wait(std::bind(&Client::makePeerSync, this));
-
-    // 开始性能测试
-    if(this->testTps) {
-        testInfo.timerPerformanceTest.expires_after(std::chrono::seconds(1));
-        testInfo.timerPerformanceTest.async_wait(std::bind(&Client::performanceTest, this));
-    }
 }
-
-void Client::handleMessage(const request_message& msg) {
-//    output << "request_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const sync_request_message& msg) {
-//    output << "sync_request_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const signed_block_ptr& msg) {
-/*    output << "signed_block_message ----------";
-    output << *msg << endl;*/
-    testInfo.update(*msg);
-}
-
-void Client::handleMessage(const packed_transaction_ptr& msg) {
-/*    output << "packed_transaction_ptr ----------";
-    output << *msg << endl;*/
-}
-
-void Client::handleMessage(const response_p2p_message& msg) {
-    //output << "response_p2p_message ----------" << endl;
-}
-
-void Client::handleMessage(const request_p2p_message& msg) {
-    //output << "request_p2p_message ----------" << endl;
-}
-
-void Client::handleMessage(const pbft_prepare &msg) {
-    //static uint64_t sn = 0;
-    //stat.put(StatInfo<pbft_prepare>(msg, fc::time_point::now(), sn++));
-    //stat.statInfo();
-}
-
-void Client::handleMessage(const pbft_commit &msg) {
-/*    output << "pbft_commit ----------";
-    output << msg << endl;*/
-}
-
-void Client::handleMessage(const pbft_view_change &msg) {
-//    output << "pbft_view_change ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const pbft_new_view &msg) {
-//    output << "pbft_new_view ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const pbft_checkpoint &msg) {
-/*    output << "pbft_checkpoint ----------";
-    output << msg << endl;*/
-}
-
-void Client::handleMessage(const pbft_stable_checkpoint &msg) {
-//    output << "pbft_stable_checkpoint ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const checkpoint_request_message &msg) {
-//    output << "checkpoint_request_message ----------";
-//    output << msg << endl;
-}
-
-void Client::handleMessage(const compressed_pbft_message &msg) {
-//    output << "compressed_pbft_message ----------" << endl;
-}
-
 
 void Client::StartReadMessage() {
     if(!_socket.is_open()) {
@@ -485,7 +130,7 @@ void Client::StartReadMessage() {
                             if(messageLength > def_send_buffer_size*2 || messageLength == 0) {
                                 cerr << "Unexpected length of this message." << endl;
                                 _socket.close();
-                                ioc.stop();
+                                connect = false;
                                 return;
                             }
                             auto totalMessageLength = messageLength + message_header_size;
@@ -494,7 +139,7 @@ void Client::StartReadMessage() {
                                 _messageBuffer.advance_read_ptr(message_header_size);
                                 if(!processNextMessage(messageLength)) {
                                     _socket.close();
-                                    ioc.stop();
+                                    connect = false;
                                     return;
                                 }
                             } else { //当前缓存区没有完整的数据
@@ -510,12 +155,14 @@ void Client::StartReadMessage() {
                     } else {
                         cerr << "error in read, " << ec.message() << endl;
                         _socket.close();
-                        ioc.stop();
+                        connect = false;
+                        return;
                     }
                 } catch (...) {
                     cerr << "Catch exception." << endl;
                     _socket.close();
-                    ioc.stop();
+                    connect = false;
+                    return;
                 }
             });
 }
@@ -534,8 +181,7 @@ void Client::DoSendoutData(void) {
         }
 
         if (outQueue.empty()) {
-            auto sleep = testTps ? 20:20000;
-            timerOutQueue.expires_after(std::chrono::microseconds(sleep));
+            timerOutQueue.expires_after(std::chrono::microseconds(outQueue.microsEmptyWaitTime));
             timerOutQueue.async_wait(std::bind(&Client::DoSendoutData, this));
             return;
         }
@@ -570,7 +216,7 @@ void Client::DoSendoutData(void) {
 
                     if (ec || w!=buff.size) {
                         _socket.close();
-                        ioc.stop();
+                        connect = false;
                         return;
                     }
 
@@ -590,7 +236,7 @@ void Client::StartSendoutData(void) {
 void Client::DoSendTimeMessage() {
     if(!_socket.is_open()){
         cerr << "check socket not open in " <<__func__<< endl;
-        ioc.stop();
+        connect = false;
         return;
     }
     auto time = std::chrono::system_clock::now().time_since_epoch().count();
@@ -607,17 +253,11 @@ void Client::DoSendTimeMessage() {
 void Client::OnResolve(boost::system::error_code ec, tcp::resolver::results_type endpoints) {
     if(ec) {
         cerr << "Resolve error." << endl;
+        canCheckStatus = true;
+        connect = false;
     } else {
         output << "Resolve ok." << endl;
         auto handle = std::bind(&Client::OnConnect, this, std::placeholders::_1, std::placeholders::_2);
         boost::asio::async_connect(_socket, endpoints, handle);
     }
 }
-
-string StatData::MsgTypeStr[MsgType::MESSAGELEN] = {
-        string("handshake_message"), string("chain_size_message"), string("go_away_message"), string("time_message"),
-        string("notice_message"), string("request_message"), string("sync_request_message"), string("signed_block"),
-        string("packed_transaction"),  string("response_p2p_message"), string("request_p2p_message"), string("pbft_prepare"),
-        string("pbft_commit"), string("pbft_view_change"), string("pbft_new_view"), string("pbft_checkpoint"),
-        string("pbft_stable_checkpoint"), string("checkpoint_request_message"), string("compressed_pbft_message")
-};

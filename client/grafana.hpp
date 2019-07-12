@@ -6,32 +6,32 @@
 
 #include <boost/asio.hpp>
 #include <memory>
+#include <string>
+#include <iostream>
+#include "iocontext.hpp"
 using boost::asio::ip::udp;
 using namespace std;
 
 class Grafana{
     udp::socket s;
-    boost::asio::io_service& ioc;
     udp::resolver resolver;
-    udp::resolver::query query{udp::v4(), "127.0.0.1", "8089"};
+    string ip;
+    string port;
+    udp::resolver::query query;
     udp::resolver::iterator iterator;
-    const string ip;
-    const string port;
 public:
-    Grafana(boost::asio::io_context& ioc, const char* ip, const char* port):
-    ioc(ioc),ip(ip), port(port), s(ioc, udp::endpoint(udp::v4(), 0)), resolver(ioc) {
-        this->query = udp::resolver::query{udp::v4(), this->ip.c_str(), this->port.c_str()};
+    Grafana(const string ip = string("127.0.0.1"), const string port = string("8089")):
+    ip(ip), port(port), resolver(IOC::app()),
+    s(IOC::app(), udp::endpoint(udp::v4(), 0)), query{udp::v4(), ip, port}{
         iterator = resolver.resolve(query);
     }
-    Grafana(boost::asio::io_context& ioc):
-    ioc(ioc),ip("127.0.0.1"), port("8089"), s(ioc, udp::endpoint(udp::v4(), 0)), resolver(ioc) {
-        iterator = resolver.resolve(query);
-    }
+    Grafana() = delete;
+    Grafana(Grafana&&) = delete;
     void send(const char* buffer, std::size_t len) {
         if(!s.is_open()) {
             cerr << "Warning: s.is_open() is false" << endl;
-            this->query = udp::resolver::query{udp::v4(), this->ip.c_str(), this->port.c_str()};
-            this->s = udp::socket(ioc, udp::endpoint(udp::v4(), 0));
+            query = udp::resolver::query{udp::v4(), ip, port};
+            s = udp::socket(IOC::app(), udp::endpoint(udp::v4(), 0));
             iterator = resolver.resolve(query);
         }
         s.send_to(boost::asio::buffer(buffer, len), *iterator);
