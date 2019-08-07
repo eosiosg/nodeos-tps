@@ -11,11 +11,9 @@
 using namespace std;
 class FakeData {
 public:
-    static eosio::handshake_message fakeHandShakeMessage(eosio::chain_id_type cid) {
+    static eosio::handshake_message fakeHandShakeMessage() {
         eosio::handshake_message h;
         h.network_version = 1206;
-
-        h.chain_id = cid;
 
         uint64_t node_id[4] = {
                 16341233654929650305ul,
@@ -36,18 +34,6 @@ public:
         h.head_num = 0;
         h.last_irreversible_block_num = 0;
         h.generation = 2;
-        return h;
-    }
-
-    static eosio::handshake_message invalidFakeHandShakeMessage(eosio::chain_id_type cid) {
-        auto h = fakeHandShakeMessage(cid);
-        h.last_irreversible_block_num = UINT32_MAX;
-        return h;
-    }
-
-    static eosio::handshake_message acceptHandshakeMessage(eosio::chain_id_type cid) {
-        auto h = fakeHandShakeMessage(cid);
-        h.generation = 1;
         return h;
     }
 };
