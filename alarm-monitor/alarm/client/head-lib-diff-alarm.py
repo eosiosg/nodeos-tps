@@ -48,16 +48,16 @@ def report_to_server(node):
     print('report to server, ', time())
     MESSAGE_TEMPLATE['node'] = node
     requests.post(REPORT_URL, data=json.dumps(MESSAGE_TEMPLATE), headers=headers)
+    sleep(1)
 
 
 def detect_alarm(nodes, client):
     for node in nodes:
         if node_avg_lib_diff_warn(client, node):
             report_to_server(node)
-            sleep(1)
 
 
-if __name__ == '__main__':
+def main():
     client = InfluxDBClient('47.75.198.231', '8486', database='boscore')
     nodes = get_all_node(client)
     prev_time = time()
@@ -74,3 +74,7 @@ if __name__ == '__main__':
             nodes = get_all_node(client)
             prev_time = time()
         sleep(10)
+
+
+if __name__ == '__main__':
+    main()
