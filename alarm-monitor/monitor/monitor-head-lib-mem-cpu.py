@@ -10,10 +10,16 @@ import sys
 import requests
 from time import time, sleep
 from os import popen
+from datetime import datetime
+from time import mktime
 
 
 # 测试环境(包括集群1、集群2、TestNet)请使用47.75.198.231:8386, BOS 生产环境请使用47.75.198.231:8486
 HOST_PORT = "47.75.198.231:8386"
+
+UTC_8_TIME_DIFF = 8*60*60*(10**9)
+
+last_time = 0
 
 
 def cpu_mem_stat(uflag):
@@ -36,8 +42,20 @@ def cpu_mem_stat(uflag):
     return out
 
 
+# 参数传入result[-1]
+def get_time(line):
+    try:
+        time_str = line.split('@')[1].split()[0]
+        t = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%S.%f')
+        return True, int((mktime(t.timetuple())*(10**6) + t.microsecond)*(10**3) + UTC_8_TIME_DIFF)
+    except Exception as e:
+        print(e)
+        return False, 0
+
+
 def head_lib_stat(uflag, log_file):
     out = ""
+    global last_time
     for i in range(5):
         cmd = "tail -20 %s |grep ' signed by '" % log_file
         with popen(cmd) as execute:
@@ -45,19 +63,25 @@ def head_lib_stat(uflag, log_file):
         if len(result) == 0:
             continue
         producer_set = set()
+        r, this_time = get_time(result[-1])
+        # 获取时间失败，或者说这次的时间和上次的时间相同(即日志没有写入)
+        if not r or this_time == last_time:
+            break
+        last_time = this_time
         for line in result[:2:-1]:
             try:
                 producer = line.split(' signed by ')[1].split()[0]
                 if producer in producer_set:
                     continue
                 producer_set.add(producer)
+                _, t = get_time(result[-1])
                 lib = int(line.split('lib: ')[1].split(',')[0])
                 head = int(line.split("#")[1].split()[0])
             except ValueError as e:
                 print(e)
                 continue
             diff = head - lib
-            out = "stat,label=%s,producer=%s,type=headLibDiff p=%d" % (uflag, producer, diff)
+            out = "stat,label=%s,producer=%s,type=headLibDiff p=%d %d" % (uflag, producer, diff, t)
         return out
     return ""  # tail -100 连续5次都未拿到数据
 
@@ -74,7 +98,8 @@ def main():
     while True:
         try:
             out = cpu_mem_stat(unique_flag)
-            out += head_lib_stat(unique_flag, nodeos_log_file)
+            r = head_lib_stat(unique_flag, nodeos_log_file)
+            out += r
             requests.post(url=url, data=out)
         except Exception as e:
             print(e)
