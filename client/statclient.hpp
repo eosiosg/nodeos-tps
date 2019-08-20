@@ -12,20 +12,42 @@
 class StatClient: public Client {
 private:
     Grafana grafana;
+    std::time_t lastSendTime = std::chrono::system_clock::now().time_since_epoch().count();
+    uint64_t count[MESSAGELEN];
+    uint64_t length[MESSAGELEN];
 public:
     StatClient() = delete;
     StatClient(const string& host, const string& port,
                const string& grafanaHost, const string& grafanaPort):
-            Client(host, port),grafana(grafanaHost, grafanaPort){ }
+            Client(host, port),grafana(grafanaHost, grafanaPort){
+        for(auto i = 0; i < MESSAGELEN; i++){
+            count[i] = length[i] = 0;
+        }
+    }
 
     virtual void toGrafana(MsgType type, std::size_t len) {
         TimeCostGuard tcg(output, "Client::toGrafana");
-        stringstream ss;
-        ss << "msgstat,m=" << type << ",hp=" << host << ":" << port
-           << " len=" << len << " " << fc::time_point::now().time_since_epoch().count()*1000;
-        auto p = ss.str();
-        grafana.send(p.c_str(), p.length());
+        count[type] ++;
+        length[type] += len;
+
+        auto now = std::chrono::system_clock::now().time_since_epoch().count();
+        // 采用批量发送的方式，减少消息发送量，每200ms发送一次
+        if(now - lastSendTime >= 200000000) {
+            lastSendTime = now;
+            for (auto i = 0; i < MESSAGELEN; i++) {
+                if(count[i] == 0) continue;
+                stringstream ss;
+                ss << "msgstat,m=" << i << ",hp=" << host << ":" << port
+                   << " len=" << length[i] << ",count=" << count[i] << " "
+                   << now << endl;
+                auto p = ss.str();
+                grafana.send(p.c_str(), p.length());
+                count[i] = 0;
+                length[i] = 0;
+            }
+        }
     }
+
     bool processNextMessage(uint32_t messageLen) override {
         try {
             auto ds = _messageBuffer.create_datastream();
