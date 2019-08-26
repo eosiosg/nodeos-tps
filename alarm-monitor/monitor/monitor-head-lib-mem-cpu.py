@@ -68,7 +68,7 @@ def head_lib_stat(uflag, log_file):
         if not r or this_time == last_time:
             break
         last_time = this_time
-        for line in result[:2:-1]:
+        for line in result[::-1]:
             try:
                 producer = line.split(' signed by ')[1].split()[0]
                 if producer in producer_set:
@@ -101,6 +101,7 @@ def main():
             r = head_lib_stat(unique_flag, nodeos_log_file)
             out += r
             requests.post(url=url, data=out)
+            print(r)
         except Exception as e:
             print(e)
         sleep(1)
